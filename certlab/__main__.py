@@ -1,4 +1,4 @@
-"""CLI:  python -m certlab demo | analyze HOST:PORT | generate DIR"""
+"""CLI:  python -m certlab demo | serve | train | export | analyze HOST:PORT | generate DIR"""
 from __future__ import annotations
 
 import argparse
@@ -52,6 +52,31 @@ def cmd_analyze(a):
     return 0 if v.allow else 2
 
 
+def cmd_train(a):
+    from .ml.model import train
+    train()
+    return 0
+
+
+def cmd_serve(a):
+    from .web.app import create_app
+    app = create_app()
+    print(f"Cert Guard Lab running at http://{a.host}:{a.port}  (Ctrl+C to stop)")
+    app.run(host=a.host, port=a.port, debug=False, threaded=True)
+    return 0
+
+
+def cmd_export(a):
+    from .service import LabService
+    from .web.page import full_page, with_data
+    frag = with_data(LabService().export())
+    html = frag if a.fragment else full_page(frag)
+    with open(a.out, "w", encoding="utf-8") as f:
+        f.write(html)
+    print(f"wrote {a.out} ({len(html) // 1024} KB)")
+    return 0
+
+
 def main(argv=None):
     p = argparse.ArgumentParser(prog="certlab", description=__doc__)
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -63,6 +88,15 @@ def main(argv=None):
     z = sub.add_parser("analyze", help="analyze the cert served at HOST:PORT")
     z.add_argument("target"), z.add_argument("--sni"), z.add_argument("--lab-dir")
     z.set_defaults(fn=cmd_analyze)
+    t = sub.add_parser("train", help="generate a dataset, train and evaluate the ML risk model")
+    t.set_defaults(fn=cmd_train)
+    sv = sub.add_parser("serve", help="start the web UI (localhost only by default)")
+    sv.add_argument("--host", default="127.0.0.1"), sv.add_argument("--port", type=int, default=5000)
+    sv.set_defaults(fn=cmd_serve)
+    ex = sub.add_parser("export", help="write a self-contained static HTML page with all results")
+    ex.add_argument("out", nargs="?", default="cert_guard_lab.html")
+    ex.add_argument("--fragment", action="store_true", help="omit doctype/meta (for embedding in a host page)")
+    ex.set_defaults(fn=cmd_export)
     a = p.parse_args(argv)
     logging.basicConfig(level=logging.WARNING, format="%(levelname)s %(name)s: %(message)s")
     return a.fn(a)

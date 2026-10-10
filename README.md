@@ -13,7 +13,8 @@ verified. **Everything runs on 127.0.0.1 with private lab CAs; nothing touches t
 | Step 2: simulated deployment on isolated servers | `certlab/netlab.py` `TLSServer` |
 | (2) MITM Simulation Module | `certlab/netlab.py` `MitmProxy` (TLS-terminating attacker proxy) |
 | (3) Certificate Analysis Engine | `certlab/analyzer.py` `Analyzer` |
-| (4) Decision & Alerting Module | `Analyzer.analyze` -> `Verdict` (allow/block, reason, log record) |
+| (4) Decision & Alerting Module | `Analyzer.analyze` -> `Verdict` (allow/block, reason, log record); `certlab/service.py` combines it with the ML score |
+| Frontend + ML (extension) | `certlab/web/` (Flask + single-page UI), `certlab/ml/` (features, dataset, model) |
 
 ```
 Cert generation -> deploy on lab server -> MITM presents cert to client
@@ -41,14 +42,69 @@ Any failed critical check blocks; otherwise the score must be >= `Policy.thresho
 `cn_only_no_san`, `rogue_ca`, `revoked`, `weak_key` (RSA-1024), `weak_signature` (SHA-1),
 `compromised_ca_misissue` (valid chain from a trusted CA, never logged in CT; the DigiNotar pattern).
 
-## Usage
+## Web app and ML model
 
 ```bash
-pip install -r requirements.txt          # cryptography; the SHA-1 cert needs the openssl CLI
-python -m certlab demo -v                # run all scenarios through MITM and 3 clients
-python -m certlab generate lab_out       # write CA/leaf/CRL/CT PEM+JSON (usable with openssl s_server, mitmproxy)
-python -m certlab analyze 127.0.0.1:8443 --sni bank.lab.test --lab-dir lab_out   # vet any TLS endpoint
-python -m unittest discover -s tests -t .
+pip install -r requirements.txt   # the SHA-1 test certificate also needs the openssl CLI
+python -m certlab serve            # http://127.0.0.1:5000  (localhost only)
+python -m certlab train            # regenerate dataset, retrain, rewrite certlab/ml/{model.joblib,metrics.json}
+python -m certlab export page.html # self-contained snapshot of every result (no server needed)
+```
+
+The UI has four tabs: **Overview** (headline results and the 5-step pipeline), **Attack lab**
+(pick any of the 11 certificates, see what each client did, the six rule checks, the ML risk score
+and the final decision), **Check a certificate** (paste a PEM chain, choose policy options, get the
+same report) and **ML model** (metrics, per-attack comparison, confusion matrix, ROC, feature importance).
+
+### The ML component
+
+A random forest scores risk from 26 features of the certificate and the requested hostname
+(`certlab/ml/features.py`): lifetime, days left, SAN size, key size, signature hash, missing
+extensions, hostname/SAN match, and name features such as edit distance to a protected name
+(`b4nk`, `bamk`, `bank-secure`). It is deliberately **blind to the trust store, CRL and CT log**, so it
+still works when those lookups are unavailable and complements the rule engine instead of copying it.
+
+Training data (`certlab/ml/dataset.py`) is generated from the lab PKI: about 1,500 good certificates and
+11 attack types (about 130 each). Labels come from how each certificate was generated, not from the rules.
+Three attack types that look identical to a good certificate on the wire (rogue CA, revoked, mis-issued
+and not logged) are held out as **blind spots** to show where the model cannot help.
+
+Latest run (seed 7, 25% held-out test set, 5-fold CV on the rest):
+
+| | Rules | ML | Rules + ML |
+|---|---|---|---|
+| Average catch rate over 14 attack types | 71% | 78% | 100% |
+| Good certificates wrongly blocked | 0% | 1.3% | 1.3% |
+
+ML alone: F1 0.991, ROC AUC 0.997, CV F1 0.993 (logistic regression baseline: F1 0.82).
+The model catches what the rules never look at (long lifetimes, missing extensions, SAN stuffing,
+look-alike domains: 0% by rules), while the rules catch what the model cannot see (rogue CA, revoked,
+mis-issued: 0% by ML). The final decision allows a connection only if both agree.
+
+**Read the numbers with care:** the training and test sets come from the same generator, so they measure
+how well the model learned this lab's attack patterns, not how it would do on internet traffic.
+`model.joblib` is a pickle; only load model files you trained yourself, and retrain after changing
+scikit-learn versions.
+
+### API
+
+| Route | Purpose |
+|---|---|
+| `GET /api/export` | every scenario run once (cached): verdicts, ML scores, client outcomes |
+| `POST /api/run/<scenario>` | re-run one attack against the lab servers |
+| `POST /api/analyze` | `{pem, host, require_ct, revocation_hard_fail}` -> verdict + ML + hybrid decision |
+| `GET /api/ml`, `/api/state`, `/api/pem/<scenario>` | metrics, scenario list, chain PEM |
+
+The server binds to 127.0.0.1, accepts JSON only on POST routes, caps request size, and never
+executes anything from uploaded certificates.
+
+## CLI
+
+```bash
+python -m certlab demo -v                      # every scenario through MITM + 3 clients, with full reports
+python -m certlab generate lab_out             # write CA/leaf/CRL/CT files (PEM/JSON) for openssl or mitmproxy
+python -m certlab analyze 127.0.0.1:8443 --sni bank.lab.test --lab-dir lab_out
+python -m unittest discover -s tests -t .      # 32 tests
 ```
 
 The demo compares three clients per scenario: **naive** (validation disabled, as in

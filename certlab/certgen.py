@@ -92,10 +92,11 @@ def make_ca(cn: str, issuer: Identity | None = None, *, days: int = 3650,
 
 def issue_leaf(issuer: Identity, hostname: str = HOST, *, cn: str | None = None,
                sans: list[str] | None = None, not_before_days: int = -1,
-               valid_days: int = 90, key_kind: str = "ec") -> Identity:
+               valid_days: int = 90, key_kind: str = "ec", key=None,
+               eku: bool = True, ids: bool = True) -> Identity:
     """Issue a server certificate. ``not_before_days``/``valid_days`` allow
     expired or not-yet-valid certs to be produced on purpose."""
-    key = new_key(key_kind)
+    key = key if key is not None else new_key(key_kind)
     now = _now()
     nb = now + dt.timedelta(days=not_before_days)
     names = sans if sans is not None else [hostname]
@@ -104,11 +105,13 @@ def issue_leaf(issuer: Identity, hostname: str = HOST, *, cn: str | None = None,
          .public_key(key.public_key())
          .serial_number(x509.random_serial_number())
          .not_valid_before(nb).not_valid_after(nb + dt.timedelta(days=valid_days))
-         .add_extension(x509.BasicConstraints(ca=False, path_length=None), critical=True)
-         .add_extension(x509.SubjectKeyIdentifier.from_public_key(key.public_key()), critical=False)
-         .add_extension(_aki(issuer.cert, key), critical=False)
-         .add_extension(x509.ExtendedKeyUsage([x509.oid.ExtendedKeyUsageOID.SERVER_AUTH]),
-                        critical=False))
+         .add_extension(x509.BasicConstraints(ca=False, path_length=None), critical=True))
+    if ids:
+        b = (b.add_extension(x509.SubjectKeyIdentifier.from_public_key(key.public_key()), critical=False)
+             .add_extension(_aki(issuer.cert, key), critical=False))
+    if eku:
+        b = b.add_extension(x509.ExtendedKeyUsage([x509.oid.ExtendedKeyUsageOID.SERVER_AUTH]),
+                            critical=False)
     if names:
         b = b.add_extension(x509.SubjectAlternativeName([x509.DNSName(n) for n in names]),
                             critical=False)
@@ -183,6 +186,7 @@ class CTLog:
         if os.path.exists(path):
             with open(path) as f:
                 self.entries = json.load(f)
+        self._fps = {e["fingerprint"] for e in self.entries}
 
     @staticmethod
     def _h(prev: str, fp: str) -> str:
@@ -195,10 +199,10 @@ class CTLog:
         prev = self.entries[-1]["hash"] if self.entries else "0" * 64
         self.entries.append({"index": len(self.entries), "fingerprint": fp,
                              "hash": self._h(prev, fp)})
+        self._fps.add(fp)
 
     def contains(self, cert: x509.Certificate) -> bool:
-        fp = fingerprint(cert)
-        return any(e["fingerprint"] == fp for e in self.entries)
+        return fingerprint(cert) in self._fps
 
     def verify_integrity(self) -> bool:
         prev = "0" * 64

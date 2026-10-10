@@ -1,0 +1,414 @@
+{
+ "trained_at": "2026-10-10 08:25 UTC",
+ "seed": 7,
+ "dataset": {
+  "total": 3080,
+  "train": 2152,
+  "test": 718,
+  "blind_spot": 210,
+  "features": 26,
+  "benign": 1500,
+  "malicious": 1370
+ },
+ "threshold": 0.5,
+ "random_forest": {
+  "accuracy": 0.9916434540389972,
+  "precision": 0.9855907780979827,
+  "recall": 0.9970845481049563,
+  "f1": 0.991304347826087,
+  "auc": 0.9973955296404275,
+  "cv_f1_mean": 0.9927052532604387,
+  "cv_f1_std": 0.0015131242039671058
+ },
+ "logistic_regression": {
+  "accuracy": 0.841225626740947,
+  "precision": 0.888135593220339,
+  "recall": 0.7638483965014577,
+  "f1": 0.8213166144200627,
+  "auc": 0.8947327502429543,
+  "cv_f1_mean": 0.8092547091189543,
+  "cv_f1_std": 0.022555279994599747
+ },
+ "confusion": [
+  [
+   370,
+   5
+  ],
+  [
+   1,
+   342
+  ]
+ ],
+ "roc": {
+  "fpr": [
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0027,
+   0.0027,
+   0.0053,
+   0.0053,
+   0.008,
+   0.008,
+   0.0107,
+   0.0107,
+   0.016,
+   0.016,
+   0.368,
+   0.3733,
+   0.8053,
+   0.8107,
+   0.8827,
+   0.8907,
+   0.896,
+   0.9013,
+   0.9733,
+   0.9787,
+   0.9813,
+   1.0
+  ],
+  "tpr": [
+   0.0,
+   0.1283,
+   0.1341,
+   0.137,
+   0.1487,
+   0.1603,
+   0.1691,
+   0.1749,
+   0.1808,
+   0.2012,
+   0.2128,
+   0.2391,
+   0.2449,
+   0.2741,
+   0.2799,
+   0.2857,
+   0.2915,
+   0.3061,
+   0.312,
+   0.3499,
+   0.3557,
+   0.3819,
+   0.3878,
+   0.4082,
+   0.414,
+   0.4927,
+   0.4927,
+   0.5948,
+   0.5948,
+   0.9475,
+   0.9475,
+   0.9942,
+   0.9942,
+   0.9971,
+   0.9971,
+   1.0,
+   1.0,
+   1.0,
+   1.0,
+   1.0,
+   1.0,
+   1.0,
+   1.0,
+   1.0,
+   1.0,
+   1.0,
+   1.0,
+   1.0
+  ]
+ },
+ "per_kind": [
+  {
+   "kind": "self_signed",
+   "description": "Self-signed certificate",
+   "n": 33,
+   "blind_spot": false,
+   "rules": 1.0,
+   "ml": 1.0,
+   "hybrid": 1.0
+  },
+  {
+   "kind": "expired",
+   "description": "Expired certificate",
+   "n": 32,
+   "blind_spot": false,
+   "rules": 1.0,
+   "ml": 1.0,
+   "hybrid": 1.0
+  },
+  {
+   "kind": "not_yet_valid",
+   "description": "Validity starts in the future",
+   "n": 33,
+   "blind_spot": false,
+   "rules": 1.0,
+   "ml": 1.0,
+   "hybrid": 1.0
+  },
+  {
+   "kind": "hostname_mismatch",
+   "description": "Cert issued for a different host",
+   "n": 33,
+   "blind_spot": false,
+   "rules": 1.0,
+   "ml": 1.0,
+   "hybrid": 1.0
+  },
+  {
+   "kind": "no_san",
+   "description": "No SubjectAltName",
+   "n": 33,
+   "blind_spot": false,
+   "rules": 1.0,
+   "ml": 1.0,
+   "hybrid": 1.0
+  },
+  {
+   "kind": "weak_key",
+   "description": "RSA-1024 key",
+   "n": 33,
+   "blind_spot": false,
+   "rules": 1.0,
+   "ml": 1.0,
+   "hybrid": 1.0
+  },
+  {
+   "kind": "weak_signature",
+   "description": "SHA-1 signature",
+   "n": 17,
+   "blind_spot": false,
+   "rules": 1.0,
+   "ml": 1.0,
+   "hybrid": 1.0
+  },
+  {
+   "kind": "long_validity",
+   "description": "Lifetime far above the 398-day norm",
+   "n": 32,
+   "blind_spot": false,
+   "rules": 0.0,
+   "ml": 1.0,
+   "hybrid": 1.0
+  },
+  {
+   "kind": "sloppy_issuance",
+   "description": "Missing key-usage and key-id extensions",
+   "n": 32,
+   "blind_spot": false,
+   "rules": 0.0,
+   "ml": 1.0,
+   "hybrid": 1.0
+  },
+  {
+   "kind": "san_stuffing",
+   "description": "Dozens of unrelated names in one cert",
+   "n": 33,
+   "blind_spot": false,
+   "rules": 0.0,
+   "ml": 1.0,
+   "hybrid": 1.0
+  },
+  {
+   "kind": "phishing_lookalike",
+   "description": "Valid cert for a look-alike domain",
+   "n": 32,
+   "blind_spot": false,
+   "rules": 0.0,
+   "ml": 0.96875,
+   "hybrid": 0.96875
+  },
+  {
+   "kind": "rogue_ca",
+   "description": "Issued by a CA nobody trusts",
+   "n": 70,
+   "blind_spot": true,
+   "rules": 1.0,
+   "ml": 0.0,
+   "hybrid": 1.0
+  },
+  {
+   "kind": "revoked",
+   "description": "Valid-looking cert that was revoked",
+   "n": 70,
+   "blind_spot": true,
+   "rules": 1.0,
+   "ml": 0.0,
+   "hybrid": 1.0
+  },
+  {
+   "kind": "misissued_not_in_ct",
+   "description": "Trusted CA mis-issue never logged in CT",
+   "n": 70,
+   "blind_spot": true,
+   "rules": 1.0,
+   "ml": 0.014285714285714285,
+   "hybrid": 1.0
+  }
+ ],
+ "false_alarm": {
+  "rules": 0.0,
+  "ml": 0.013333333333333334,
+  "hybrid": 0.013333333333333334
+ },
+ "catch_rate_macro": {
+  "rules": 0.7142857142857143,
+  "ml": 0.7845025510204081,
+  "hybrid": 0.9977678571428571
+ },
+ "importance": [
+  {
+   "feature": "san_count",
+   "importance": 0.1773099547531691,
+   "description": "Number of names in the SAN"
+  },
+  {
+   "feature": "days_left",
+   "importance": 0.1443680264874528,
+   "description": "Days until expiry (negative = expired)"
+  },
+  {
+   "feature": "days_old",
+   "importance": 0.13517411656782205,
+   "description": "Days since issued (negative = not yet valid)"
+  },
+  {
+   "feature": "host_match",
+   "importance": 0.10447221213545145,
+   "description": "Requested hostname is covered by the SAN"
+  },
+  {
+   "feature": "key_bits",
+   "importance": 0.08382005515416402,
+   "description": "Public key size in bits"
+  },
+  {
+   "feature": "validity_days",
+   "importance": 0.060494915498735674,
+   "description": "Total lifetime in days"
+  },
+  {
+   "feature": "has_eku",
+   "importance": 0.04158828227951607,
+   "description": "Declares an Extended Key Usage"
+  },
+  {
+   "feature": "brand_edit_dist",
+   "importance": 0.0325052114803826,
+   "description": "Edit distance to the closest protected name (9 = far)"
+  },
+  {
+   "feature": "has_ski",
+   "importance": 0.02550763826533944,
+   "description": "Has a Subject Key Identifier"
+  },
+  {
+   "feature": "has_aki",
+   "importance": 0.024960477748208233,
+   "description": "Has an Authority Key Identifier"
+  },
+  {
+   "feature": "host_entropy",
+   "importance": 0.023085568542098714,
+   "description": "Character entropy of the name's first label"
+  },
+  {
+   "feature": "brand_substring",
+   "importance": 0.020878203785116598,
+   "description": "First label contains a protected name but is not it"
+  },
+  {
+   "feature": "host_len",
+   "importance": 0.01689051064316262,
+   "description": "Length of the requested name"
+  },
+  {
+   "feature": "key_is_rsa",
+   "importance": 0.015519654378465711,
+   "description": "RSA key (otherwise EC)"
+  },
+  {
+   "feature": "leet_swap",
+   "importance": 0.01531251070534024,
+   "description": "Digit that mimics a letter (0/o, 1/l, 3/e, 4/a)"
+  },
+  {
+   "feature": "san_wildcard",
+   "importance": 0.013455816117827176,
+   "description": "SAN contains a wildcard"
+  },
+  {
+   "feature": "has_san",
+   "importance": 0.012412224282020747,
+   "description": "Has a SubjectAltName"
+  },
+  {
+   "feature": "cn_in_san",
+   "importance": 0.010428300415126981,
+   "description": "Common Name also listed in the SAN"
+  },
+  {
+   "feature": "sig_weak",
+   "importance": 0.008131314866963647,
+   "description": "MD5/SHA-1 signature"
+  },
+  {
+   "feature": "brand_exact",
+   "importance": 0.007927636333208051,
+   "description": "First label is exactly a protected name"
+  },
+  {
+   "feature": "host_hyphens",
+   "importance": 0.00759033521806901,
+   "description": "Hyphens in the first label"
+  },
+  {
+   "feature": "self_signed",
+   "importance": 0.006696703244006986,
+   "description": "Certificate signed by its own key"
+  },
+  {
+   "feature": "chain_len",
+   "importance": 0.006632228073774475,
+   "description": "Certificates sent by the server"
+  },
+  {
+   "feature": "host_digit_ratio",
+   "importance": 0.0048381030245774805,
+   "description": "Share of digits in the first label"
+  },
+  {
+   "feature": "leaf_is_ca",
+   "importance": 0.0,
+   "description": "Leaf certificate claims to be a CA"
+  },
+  {
+   "feature": "host_depth",
+   "importance": 0.0,
+   "description": "Number of dots in the requested name"
+  }
+ ]
+}

@@ -1,0 +1,669 @@
+<title>Cert Guard Lab</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Schibsted+Grotesk:wght@400;500;600;700;800&display=swap">
+<style>
+/* Layout: sticky header with four tabs; content is a single 1080px column that splits into
+   list + detail only inside the Attack lab. One bold move: ink-stamp verdicts. */
+:root {
+  --bg: #eceff3;
+  --surface: #fbfcfd;
+  --surface-2: #f1f4f8;
+  --ink: #131d28;
+  --ink-2: #4b5b6b;
+  --line: #d3dae2;
+  --accent: #2346c4;
+  --accent-soft: #dfe6fb;
+  --on-accent: #ffffff;
+  --ok: #17703f;
+  --ok-bg: #dcf2e4;
+  --bad: #b3261e;
+  --bad-bg: #fbe2df;
+  --warn: #86570a;
+  --warn-bg: #faeecb;
+  --font-ui: "Schibsted Grotesk", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0c1117; --surface: #131a22; --surface-2: #19232d; --ink: #e6ecf2; --ink-2: #9aaebe;
+    --line: #26343f; --accent: #8ba5ff; --accent-soft: #1b2748; --on-accent: #0c1117;
+    --ok: #62d48e; --ok-bg: #11301f; --bad: #ff8d83; --bad-bg: #3a1815; --warn: #f1c25f; --warn-bg: #33270c;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0c1117; --surface: #131a22; --surface-2: #19232d; --ink: #e6ecf2; --ink-2: #9aaebe;
+  --line: #26343f; --accent: #8ba5ff; --accent-soft: #1b2748; --on-accent: #0c1117;
+  --ok: #62d48e; --ok-bg: #11301f; --bad: #ff8d83; --bad-bg: #3a1815; --warn: #f1c25f; --warn-bg: #33270c;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0; background: var(--bg); color: var(--ink);
+  font: 15px/1.55 var(--font-ui); padding-inline: 16px; padding-block: 0 48px;
+}
+h1, h2, h3 { text-wrap: balance; line-height: 1.15; margin: 0; letter-spacing: -0.015em; }
+p { margin: 0; }
+code, .mono { font-family: var(--font-mono); font-size: 0.88em; }
+button { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.wrap { max-width: 1080px; margin-inline: auto; }
+
+/* header */
+header.top {
+  position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5; background: var(--bg);
+  margin-inline: -16px; padding: 10px 16px 0; border-bottom: 1px solid var(--line);
+}
+.top-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.brand { display: flex; align-items: baseline; gap: 10px; min-width: 0; }
+.brand b { font-weight: 800; font-size: 18px; letter-spacing: -0.02em; }
+.brand span { color: var(--ink-2); font-size: 13px; }
+.mode { font: 600 11px/1 var(--font-mono); letter-spacing: 0.08em; text-transform: uppercase;
+  padding: 5px 8px; border-radius: 4px; border: 1px solid var(--line); color: var(--ink-2); }
+.mode.live { color: var(--ok); border-color: var(--ok); }
+.icon-btn { border: 1px solid var(--line); background: var(--surface); border-radius: 6px; padding: 6px 10px; cursor: pointer; }
+nav[role="tablist"] { display: flex; gap: 2px; overflow-x: auto; margin-top: 8px; scrollbar-width: none; }
+nav[role="tablist"]::-webkit-scrollbar { display: none; }
+nav button {
+  background: none; border: 0; border-bottom: 3px solid transparent; padding: 10px 14px 9px;
+  cursor: pointer; font-weight: 600; color: var(--ink-2); white-space: nowrap;
+}
+nav button[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--accent); }
+nav button:hover { color: var(--ink); }
+
+section.tab { padding-block: 28px 0; display: flex; flex-direction: column; gap: 28px; }
+.eyebrow { font: 600 11px/1 var(--font-mono); letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-2); }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 18px; min-width: 0; }
+.card h3 { font-size: 16px; margin-bottom: 4px; }
+.sub { color: var(--ink-2); }
+.scroll-x { overflow-x: auto; }
+
+/* overview */
+.hero { display: grid; gap: 14px; padding-block: 8px 0; max-width: 820px; }
+.hero h1 { font-size: clamp(28px, 5vw, 46px); font-weight: 800; }
+.hero p { font-size: 17px; color: var(--ink-2); max-width: 62ch; }
+.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 12px; }
+.stat { padding: 16px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); min-width: 0; }
+.stat .n { font: 700 34px/1 var(--font-ui); letter-spacing: -0.03em; font-variant-numeric: tabular-nums; }
+.stat .n small { font-size: 16px; color: var(--ink-2); font-weight: 600; }
+.stat p { margin-top: 8px; font-size: 13.5px; color: var(--ink-2); }
+.stat.bad .n { color: var(--bad); } .stat.ok .n { color: var(--ok); } .stat.warn .n { color: var(--warn); }
+.steps { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; counter-reset: s; }
+.steps li { counter-increment: s; border: 1px solid var(--line); background: var(--surface); border-radius: 10px; padding: 14px; position: relative; min-width: 0; }
+.steps li::before { content: counter(s); font: 600 12px/1 var(--font-mono); color: var(--accent); display: block; margin-bottom: 10px; }
+.steps b { display: block; margin-bottom: 4px; }
+.steps span { color: var(--ink-2); font-size: 13.5px; display: block; }
+.two { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 440px), 1fr)); gap: 12px; }
+.two ul { margin: 8px 0 0; padding-left: 18px; color: var(--ink-2); }
+.two li + li { margin-top: 4px; }
+
+/* stamp & pills */
+.stamp {
+  display: inline-block; font: 700 15px/1 var(--font-mono); letter-spacing: 0.14em; text-transform: uppercase;
+  padding: 9px 14px; border: 3px solid currentColor; border-radius: 6px; transform: rotate(-2.5deg);
+  box-shadow: inset 0 0 0 1px currentColor;
+}
+.stamp.ok { color: var(--ok); } .stamp.bad { color: var(--bad); }
+.pill { display: inline-block; font: 600 11px/1 var(--font-mono); letter-spacing: 0.06em; text-transform: uppercase; padding: 4px 7px; border-radius: 4px; }
+.pill.pass, .pill.ok { background: var(--ok-bg); color: var(--ok); }
+.pill.fail, .pill.bad { background: var(--bad-bg); color: var(--bad); }
+.pill.warn { background: var(--warn-bg); color: var(--warn); }
+.pill.skip, .pill.neutral { background: var(--surface-2); color: var(--ink-2); }
+
+/* attack lab */
+.lab { display: grid; grid-template-columns: 290px minmax(0, 1fr); gap: 16px; align-items: start; }
+.list { display: flex; flex-direction: column; gap: 6px; position: sticky; top: 120px; }
+.item {
+  display: grid; grid-template-columns: 1fr auto; gap: 2px 8px; text-align: left; cursor: pointer;
+  padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); min-width: 0;
+}
+.item:hover { border-color: var(--ink-2); }
+.item[aria-pressed="true"] { border-color: var(--accent); background: var(--accent-soft); }
+.item b { font-weight: 600; overflow-wrap: anywhere; }
+.item small { grid-column: 1 / -1; color: var(--ink-2); font-size: 12.5px; }
+.detail { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+.verdict { display: flex; flex-wrap: wrap; gap: 16px; align-items: center; justify-content: space-between; }
+.verdict h2 { font-size: 22px; }
+.verdict .why { color: var(--ink-2); margin-top: 4px; }
+.meters { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; margin-top: 16px; }
+.meter .lbl { display: flex; justify-content: space-between; gap: 8px; font-size: 13px; margin-bottom: 6px; }
+.meter .lbl b { font-variant-numeric: tabular-nums; }
+.bar { position: relative; height: 10px; background: var(--surface-2); border-radius: 5px; border: 1px solid var(--line); }
+.bar i { position: absolute; inset: 0 auto 0 0; border-radius: 4px; background: var(--ink-2); }
+.bar i.ok { background: var(--ok); } .bar i.bad { background: var(--bad); } .bar i.warn { background: var(--warn); }
+.bar em { position: absolute; top: -4px; bottom: -4px; width: 2px; background: var(--ink); }
+.meter small { display: block; margin-top: 6px; color: var(--ink-2); font-size: 12.5px; }
+.clients { display: grid; gap: 8px; margin-top: 10px; }
+.client { display: grid; grid-template-columns: 170px minmax(0, 1fr); gap: 4px 14px; align-items: start; padding: 10px 12px; border-radius: 8px; background: var(--surface-2); }
+.client b { font-weight: 600; }
+.client small { display: block; color: var(--ink-2); font-weight: 400; font-size: 12.5px; }
+.client p { overflow-wrap: anywhere; }
+.client .pill { margin-right: 8px; vertical-align: 1px; }
+table { border-collapse: collapse; width: 100%; font-size: 14px; }
+th { text-align: left; font: 600 11px/1 var(--font-mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-2); padding: 8px 10px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+td { padding: 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+tr:last-child td { border-bottom: 0; }
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+.q { color: var(--ink-2); font-size: 12.5px; display: block; }
+.detail-text { overflow-wrap: anywhere; }
+.reasons { margin: 10px 0 0; padding: 0; list-style: none; display: grid; gap: 6px; }
+.reasons li { display: grid; grid-template-columns: 54px minmax(0, 1fr); gap: 10px; align-items: baseline; }
+.reasons .eff { font: 600 13px/1 var(--font-mono); color: var(--bad); text-align: right; }
+details { border-top: 1px solid var(--line); padding-top: 10px; }
+details + details { margin-top: 10px; }
+summary { cursor: pointer; font-weight: 600; }
+.kv { display: grid; grid-template-columns: 110px minmax(0, 1fr); gap: 3px 12px; margin: 10px 0 0; font-size: 13.5px; }
+.kv dt { color: var(--ink-2); } .kv dd { margin: 0; overflow-wrap: anywhere; }
+.certs { display: grid; gap: 14px; margin-top: 10px; }
+.certs h4 { margin: 0; font-size: 13.5px; }
+.actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.btn { border: 1px solid var(--line); background: var(--surface); padding: 8px 14px; border-radius: 6px; cursor: pointer; font-weight: 600; }
+.btn:hover { border-color: var(--ink-2); }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+.btn:disabled { opacity: 0.55; cursor: not-allowed; }
+
+/* analyze */
+.form { display: grid; gap: 12px; }
+.form label { display: grid; gap: 4px; font-weight: 600; font-size: 13.5px; }
+textarea, input[type="text"], select {
+  width: 100%; font: 13px/1.45 var(--font-mono); color: var(--ink); background: var(--surface-2);
+  border: 1px solid var(--line); border-radius: 6px; padding: 10px; min-width: 0;
+}
+textarea { min-height: 190px; resize: vertical; }
+.row { display: flex; flex-wrap: wrap; gap: 12px 18px; align-items: center; }
+.row label { display: flex; grid-template-columns: none; align-items: center; gap: 8px; font-weight: 500; }
+.err { color: var(--bad); background: var(--bad-bg); padding: 10px 12px; border-radius: 6px; }
+.note { color: var(--ink-2); font-size: 13.5px; }
+
+/* ML tab */
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; }
+.tile { border: 1px solid var(--line); border-radius: 10px; background: var(--surface); padding: 14px; min-width: 0; }
+.tile .n { font: 700 28px/1 var(--font-ui); font-variant-numeric: tabular-nums; letter-spacing: -0.02em; }
+.tile p { color: var(--ink-2); font-size: 13px; margin-top: 6px; }
+.cell { display: flex; align-items: center; gap: 8px; min-width: 130px; }
+.cell .bar { flex: 1; height: 8px; min-width: 50px; } .cell b { width: 40px; text-align: right; font-variant-numeric: tabular-nums; font-weight: 600; }
+tr.sep td { border-top: 2px solid var(--line); }
+.charts { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 12px; }
+.cm { display: grid; grid-template-columns: auto 1fr 1fr; gap: 6px; align-items: stretch; max-width: 380px; margin-top: 10px; }
+.cm div { padding: 14px 8px; text-align: center; border-radius: 6px; }
+.cm .h { font: 600 11px/1.3 var(--font-mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-2); padding: 4px; display: flex; align-items: center; justify-content: center; }
+.cm .v { font: 700 26px/1 var(--font-ui); font-variant-numeric: tabular-nums; }
+.cm .v small { display: block; font: 500 11px/1.3 var(--font-ui); margin-top: 4px; }
+.cm .good { background: var(--ok-bg); color: var(--ok); } .cm .miss { background: var(--bad-bg); color: var(--bad); }
+.imp { display: grid; gap: 8px; margin-top: 10px; }
+.imp div { display: grid; grid-template-columns: minmax(130px, 200px) minmax(0, 1fr) 46px; gap: 10px; align-items: center; font-size: 13.5px; }
+.imp .bar { height: 8px; } .imp i { background: var(--accent); }
+.imp .v { text-align: right; font-family: var(--font-mono); font-size: 12px; color: var(--ink-2); }
+svg text { fill: var(--ink-2); font: 11px var(--font-mono); }
+svg .ax { stroke: var(--line); fill: none; } svg .curve { stroke: var(--accent); stroke-width: 2.5; fill: none; }
+svg .diag { stroke: var(--ink-2); stroke-dasharray: 4 4; fill: none; }
+footer { margin-top: 40px; padding-top: 16px; border-top: 1px solid var(--line); color: var(--ink-2); font-size: 13px; }
+
+@media (max-width: 860px) {
+  .lab { grid-template-columns: minmax(0, 1fr); }
+  .list { position: static; flex-direction: row; flex-wrap: wrap; }
+  .item { flex: 1 1 200px; }
+  .item small { display: none; }
+}
+@media (max-width: 560px) {
+  .client { grid-template-columns: minmax(0, 1fr); }
+  .imp div { grid-template-columns: minmax(0, 1fr) 46px; }
+  .imp .bar { grid-column: 1 / -1; grid-row: 2; }
+  .brand span { display: none; }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .stamp { animation: press .28s ease-out; }
+  @keyframes press { from { transform: rotate(-2.5deg) scale(1.25); opacity: 0; } to { transform: rotate(-2.5deg) scale(1); opacity: 1; } }
+}
+</style>
+
+<div class="wrap">
+  <header class="top">
+    <div class="top-row">
+      <div class="brand"><b>Cert Guard Lab</b><span>Crypto Graphers · CE305/CS305</span></div>
+      <div class="row" style="gap:8px">
+        <span id="mode" class="mode">loading</span>
+        <button id="theme" class="icon-btn" type="button" aria-label="Switch colour theme">Theme</button>
+      </div>
+    </div>
+    <nav role="tablist" aria-label="Sections">
+      <button role="tab" id="t-overview" data-tab="overview" type="button">Overview</button>
+      <button role="tab" id="t-lab" data-tab="lab" type="button">Attack lab</button>
+      <button role="tab" id="t-analyze" data-tab="analyze" type="button">Check a certificate</button>
+      <button role="tab" id="t-model" data-tab="model" type="button">ML model</button>
+    </nav>
+  </header>
+
+  <main>
+    <section class="tab" id="panel-overview" role="tabpanel" aria-labelledby="t-overview"></section>
+    <section class="tab" id="panel-lab" role="tabpanel" aria-labelledby="t-lab" hidden></section>
+    <section class="tab" id="panel-analyze" role="tabpanel" aria-labelledby="t-analyze" hidden></section>
+    <section class="tab" id="panel-model" role="tabpanel" aria-labelledby="t-model" hidden></section>
+  </main>
+
+  <footer>
+    Crypto Graphers · Applied Cryptography and Network Security Design Challenge 2026-27 ·
+    Bhartiya Vidya Bhavan's Sardar Patel Institute of Technology. All certificates, CAs and traffic in this lab are
+    generated locally for teaching and never touch the public PKI.
+  </footer>
+</div>
+
+<script>
+/*__STATIC_DATA__*/
+(function () {
+  "use strict";
+  var STATIC = window.__STATIC__ || null;
+  var DATA = null, LIVE = false, selected = "legitimate", lastAnalyze = null;
+
+  // ---- tiny DOM helpers (text only: certificate fields are attacker controlled) -------------
+  function h(tag, props) {
+    var e = document.createElement(tag), kids = Array.prototype.slice.call(arguments, 2);
+    Object.keys(props || {}).forEach(function (k) {
+      var v = props[k];
+      if (k === "class") e.className = v;
+      else if (k.indexOf("on") === 0) e.addEventListener(k.slice(2), v);
+      else if (v === true) e.setAttribute(k, "");
+      else if (v !== false && v != null) e.setAttribute(k, v);
+    });
+    (function add(list) {
+      list.forEach(function (c) {
+        if (Array.isArray(c)) return add(c);
+        if (c == null || c === false) return;
+        e.append(c.nodeType ? c : document.createTextNode(String(c)));
+      });
+    })(kids);
+    return e;
+  }
+  var SVGNS = "http://www.w3.org/2000/svg";
+  function s(tag, props) {
+    var e = document.createElementNS(SVGNS, tag);
+    Object.keys(props || {}).forEach(function (k) { e.setAttribute(k, props[k]); });
+    Array.prototype.slice.call(arguments, 2).forEach(function (c) { e.append(c.nodeType ? c : document.createTextNode(c)); });
+    return e;
+  }
+  function $(sel) { return document.querySelector(sel); }
+  function pct(x) { return Math.round(x * 100) + "%"; }
+  function clear(el) { while (el.firstChild) el.removeChild(el.firstChild); return el; }
+  function pill(text, kind) { return h("span", { class: "pill " + kind }, text); }
+  function shortErr(e) { return String(e || "").replace(/\s*\(_ssl\.c:\d+\)\.?/, "").replace(/^\[SSL: [A-Z_]+\]\s*/, ""); }
+  function bar(value, max, kind, tick) {
+    var b = h("div", { class: "bar" }, h("i", { class: kind || "", style: "width:" + Math.max(0, Math.min(100, value / max * 100)) + "%" }));
+    if (tick != null) b.append(h("em", { style: "left:" + (tick / max * 100) + "%" }));
+    return b;
+  }
+
+  var CHECKS = {
+    chain: ["Chain of trust", "Does the chain lead to a root we trust?"],
+    validity: ["Validity dates", "Is today inside every certificate's dates?"],
+    hostname: ["Hostname", "Does the certificate name the site we asked for?"],
+    revocation: ["Revocation", "Has the CA cancelled this certificate?"],
+    ct: ["Public log (CT)", "Was it recorded in the public certificate log?"],
+    strength: ["Crypto strength", "Are the key and signature strong enough?"]
+  };
+  var BINARY = /^(self_signed|host_match|has_|san_wildcard|cn_in_san|key_is_rsa|sig_weak|leaf_is_ca|brand_exact|brand_substring|leet_swap)/;
+  function fmtFeature(name, v) { return BINARY.test(name) ? (v ? "yes" : "no") : String(Math.round(v * 100) / 100); }
+
+  // ---- tabs --------------------------------------------------------------------------------------
+  var TABS = ["overview", "lab", "analyze", "model"];
+  function showTab(name) {
+    if (TABS.indexOf(name) < 0) name = "overview";
+    TABS.forEach(function (t) {
+      $("#panel-" + t).hidden = t !== name;
+      $("#t-" + t).setAttribute("aria-selected", t === name ? "true" : "false");
+    });
+    window.scrollTo(0, 0);
+  }
+  function route() { showTab(location.hash.replace("#", "")); }
+  document.querySelectorAll("nav button").forEach(function (b) {
+    b.addEventListener("click", function () { location.hash = b.dataset.tab; showTab(b.dataset.tab); });
+  });
+  window.addEventListener("hashchange", route);
+
+  // ---- theme ---------------------------------------------------------------------------------------
+  try { var saved = localStorage.getItem("cgl-theme"); if (saved) document.documentElement.setAttribute("data-theme", saved); } catch (e) {}
+  $("#theme").addEventListener("click", function () {
+    var root = document.documentElement, cur = root.getAttribute("data-theme");
+    var dark = cur ? cur === "dark" : window.matchMedia("(prefers-color-scheme: dark)").matches;
+    var next = dark ? "light" : "dark";
+    root.setAttribute("data-theme", next);
+    try { localStorage.setItem("cgl-theme", next); } catch (e) {}
+  });
+
+  // ---- data ----------------------------------------------------------------------------------------
+  async function load() {
+    if (STATIC) { DATA = STATIC; LIVE = false; return; }
+    var r = await fetch("/api/export");
+    if (!r.ok) throw new Error("The server returned " + r.status);
+    DATA = await r.json(); LIVE = true;
+  }
+  function attacks() { return DATA.state.scenarios.filter(function (x) { return x.expect === "block"; }); }
+  function runOf(name) { return DATA.runs[name]; }
+
+  // ---- Overview ------------------------------------------------------------------------------------
+  function renderOverview() {
+    var el = clear($("#panel-overview"));
+    var atk = attacks();
+    var leaked = atk.filter(function (a) { return runOf(a.name).clients.naive.leaked; }).length;
+    var stdOk = atk.filter(function (a) { return runOf(a.name).clients.stdlib.connected; }).length;
+    var guard = atk.filter(function (a) { return !runOf(a.name).clients.guarded.connected; }).length;
+    var hyb = atk.filter(function (a) { return !runOf(a.name).hybrid.allow; }).length;
+    var ml = DATA.ml;
+
+    el.append(
+      h("div", { class: "hero" },
+        h("div", { class: "eyebrow" }, "Certificate validation testbed"),
+        h("h1", null, "A padlock shows the line is private. It does not show who is on the other end."),
+        h("p", null, "This lab plays a man-in-the-middle against a pretend bank using " + atk.length +
+          " kinds of bad certificate, then shows how a rule engine and a small machine-learning model decide which connections to trust.")),
+      h("div", { class: "stats" },
+        h("div", { class: "stat bad" }, h("div", { class: "n" }, leaked, h("small", null, " / " + atk.length)),
+          h("p", null, "attacks where an app with validation switched off handed its password to the attacker")),
+        h("div", { class: "stat warn" }, h("div", { class: "n" }, stdOk, h("small", null, " / " + atk.length)),
+          h("p", null, "fake certificates that Python's own default checks still accepted")),
+        h("div", { class: "stat ok" }, h("div", { class: "n" }, guard, h("small", null, " / " + atk.length)),
+          h("p", null, "attacks stopped before any data was sent, by the guard's six rule checks")),
+        ml ? h("div", { class: "stat ok" }, h("div", { class: "n" }, pct(ml.catch_rate_macro.hybrid)),
+          h("p", null, "average catch rate over " + ml.per_kind.length + " attack types with rules + ML together (rules alone " +
+            pct(ml.catch_rate_macro.rules) + ", ML alone " + pct(ml.catch_rate_macro.ml) + ")")) : null),
+      h("div", null,
+        h("div", { class: "eyebrow", style: "margin-bottom:10px" }, "How the lab works"),
+        h("ol", { class: "steps" },
+          h("li", null, h("b", null, "Make certificates"), h("span", null, "A private root and intermediate CA issue one good certificate and ten bad ones.")),
+          h("li", null, h("b", null, "Deploy"), h("span", null, "A pretend bank serves TLS on this machine only.")),
+          h("li", null, h("b", null, "Attack"), h("span", null, "A man-in-the-middle proxy answers the client with a bad certificate and reads what it can.")),
+          h("li", null, h("b", null, "Inspect"), h("span", null, "Six rule checks and an ML risk score examine the chain before any password is sent.")),
+          h("li", null, h("b", null, "Decide"), h("span", null, "Allow or block, with the reason logged. Blocked means nothing leaked.")))),
+      h("div", { class: "two" },
+        h("div", { class: "card" }, h("h3", null, "What the six rules check"),
+          h("ul", null, Object.keys(CHECKS).map(function (k) { return h("li", null, h("b", null, CHECKS[k][0] + ": "), CHECKS[k][1]); }))),
+        h("div", { class: "card" }, h("h3", null, "What the ML model adds"),
+          h("p", { class: "sub" }, "The model reads only what is visible in the handshake, with no trust store, revocation list or log lookup. " +
+            "It learns patterns the rules never mention: unusually long lifetimes, missing extensions, huge name lists and look-alike domains such as b4nk or bank-secure."),
+          h("p", { class: "sub", style: "margin-top:8px" }, "Used together, a connection is allowed only if the rules pass and the model rates it low risk (" +
+            hyb + " of " + atk.length + " lab attacks end up blocked).")),
+        h("div", { class: "card" }, h("h3", null, "Limits worth knowing"),
+          h("ul", null,
+            h("li", null, "Everything is synthetic and local. The ML numbers measure this generator, not the real internet."),
+            h("li", null, "The certificate log and revocation list are local files standing in for public CT logs and CRLs. There is no OCSP."),
+            h("li", null, "The attacker is a small Python proxy, not mitmproxy or bettercap."))),
+        h("div", { class: "card" }, h("h3", null, LIVE ? "You are running the live app" : "This is a shared snapshot"),
+          h("p", { class: "sub" }, LIVE
+            ? "Every scenario here ran on real sockets just now. You can re-run any attack and paste your own certificate chain."
+            : "These results were recorded from a real run of the lab. To re-run attacks and check your own certificates, start the app with: python -m certlab serve"))));
+  }
+
+  // ---- result view (shared by Attack lab and Check a certificate) -----------------------
+  function meters(r) {
+    var v = r.verdict, ml = r.ml;
+    return h("div", { class: "meters" },
+      h("div", { class: "meter" },
+        h("div", { class: "lbl" }, h("span", null, "Rule trust score"), h("b", null, v.score + " / 100")),
+        bar(v.score, 100, v.allow ? "ok" : "bad", 80),
+        h("small", null, "Tick marks the pass line (80). Any failed critical check blocks regardless of score.")),
+      ml ? h("div", { class: "meter" },
+        h("div", { class: "lbl" }, h("span", null, "ML risk"), h("b", null, pct(ml.risk))),
+        bar(ml.risk, 1, ml.flag ? "bad" : "ok", ml.threshold),
+        h("small", null, ml.flag ? "Above the " + pct(ml.threshold) + " line: the model flags this certificate." : "Below the " + pct(ml.threshold) + " line: nothing unusual to the model.")) : null);
+  }
+  function checksTable(v) {
+    return h("div", { class: "scroll-x" }, h("table", null,
+      h("thead", null, h("tr", null, h("th", null, "Check"), h("th", null, "Result"), h("th", null, "What it found"), h("th", { class: "num" }, "Weight"))),
+      h("tbody", null, v.checks.map(function (c) {
+        var meta = CHECKS[c.name] || [c.name, ""];
+        return h("tr", null,
+          h("td", null, h("b", null, meta[0]), h("span", { class: "q" }, meta[1])),
+          h("td", null, pill(c.status, c.status)),
+          h("td", { class: "detail-text" }, c.detail),
+          h("td", { class: "num" }, c.weight));
+      }))));
+  }
+  function mlReasons(ml) {
+    if (!ml) return null;
+    var body;
+    if (ml.reasons.length && ml.risk >= 0.2) {
+      body = h("ul", { class: "reasons" }, ml.reasons.map(function (x) {
+        return h("li", null, h("span", { class: "eff" }, "+" + Math.round(x.effect * 100)),
+          h("span", null, x.description + ": ", h("b", null, fmtFeature(x.feature, x.value)), " (normal certificates: ", fmtFeature(x.feature, x.typical), ")"));
+      }));
+    } else {
+      body = h("p", { class: "sub", style: "margin-top:8px" }, "No single feature stands out from a normal certificate.");
+    }
+    return h("div", null, h("h3", null, "Why the model scored it this way"),
+      h("p", { class: "note" }, "Points show how much the risk would drop if that one feature looked normal."), body);
+  }
+  function chainView(chain) {
+    return h("details", null, h("summary", null, "Certificate chain (" + chain.length + ")"),
+      h("div", { class: "certs" }, chain.map(function (c, i) {
+        return h("div", null, h("h4", null, i === 0 ? "Server certificate" : c.issuer === c.subject ? "Root certificate" : "Intermediate certificate"),
+          h("dl", { class: "kv" },
+            h("dt", null, "Subject"), h("dd", null, c.subject),
+            h("dt", null, "Issuer"), h("dd", null, c.issuer),
+            h("dt", null, "Valid"), h("dd", null, c.not_before + " to " + c.not_after),
+            h("dt", null, "Names (SAN)"), h("dd", null, c.sans.length ? c.sans.join(", ") + (c.san_total > c.sans.length ? " … (" + c.san_total + " total)" : "") : "none"),
+            h("dt", null, "Key"), h("dd", null, c.key),
+            h("dt", null, "Signature"), h("dd", null, c.signature),
+            h("dt", null, "Serial"), h("dd", { class: "mono" }, c.serial),
+            h("dt", null, "SHA-256"), h("dd", { class: "mono" }, c.sha256 + "…")));
+      })));
+  }
+  function verdictHeader(r) {
+    var ok = r.hybrid.allow;
+    return h("div", { class: "card" },
+      h("div", { class: "verdict" },
+        h("div", { style: "min-width:0" },
+          h("div", { class: "eyebrow" }, "Final decision, rules + ML"),
+          h("h2", null, r.hybrid.reason),
+          h("p", { class: "why" }, "Rule engine: " + (r.verdict.allow ? "allowed" : "blocked, " + r.verdict.reason) + ".")),
+        h("span", { class: "stamp " + (ok ? "ok" : "bad"), role: "img", "aria-label": ok ? "Allowed" : "Blocked" }, ok ? "Allowed" : "Blocked")),
+      meters(r));
+  }
+
+  // ---- Attack lab ----------------------------------------------------------------------------------
+  function clientRows(r) {
+    var attack = r.scenario.expect === "block", c = r.clients, rows = [];
+    // careless app
+    rows.push(h("div", { class: "client" },
+      h("b", null, "App with validation off", h("small", null, "how weak mobile and IoT clients behave")),
+      c.naive.leaked ? h("p", null, pill("leaked", "bad"), "Connected and sent the password. The attacker read it in plain text.")
+        : h("p", null, pill("safe", "ok"), "Connected to the real bank. No attacker in the path.")));
+    // python default
+    var std = c.stdlib;
+    rows.push(h("div", { class: "client" },
+      h("b", null, "Python default checks", h("small", null, "ssl.create_default_context")),
+      std.connected
+        ? (attack ? h("p", null, pill("fooled", "bad"), "Accepted the certificate. A bad certificate got through.") : h("p", null, pill("ok", "ok"), "Accepted the genuine certificate."))
+        : h("p", null, pill("refused", attack ? "ok" : "bad"), shortErr(std.error))));
+    // guarded
+    var g = c.guarded;
+    rows.push(h("div", { class: "client" },
+      h("b", null, "Client behind the guard", h("small", null, "rules, then ML, before any data")),
+      r.hybrid.allow && g.connected ? h("p", null, pill("allowed", "ok"), "Checks passed. The password was sent to the real bank.")
+        : h("p", null, pill("stopped", "ok"), "Closed the connection before sending anything. " + (g.error ? "Rule engine: " + g.error + "." : "The ML model raised the alarm."))));
+    return h("div", { class: "clients" }, rows);
+  }
+  function renderDetail(name, box) {
+    var r = runOf(name);
+    clear(box).append(
+      h("div", { class: "card" },
+        h("div", { class: "eyebrow" }, r.via_mitm ? "Attacker sits between client and bank" : "No attacker: direct connection"),
+        h("h2", { style: "font-size:24px;margin:6px 0" }, r.scenario.name.replace(/_/g, " ")),
+        h("p", { class: "sub" }, r.scenario.description),
+        h("div", { class: "clients-title", style: "margin-top:16px" }, h("h3", null, "What each client did")),
+        clientRows(r),
+        LIVE ? h("div", { class: "actions", style: "margin-top:14px" },
+          h("button", { class: "btn", type: "button", id: "rerun" }, r.via_mitm ? "Run this attack again" : "Run again"),
+          h("button", { class: "btn", type: "button", id: "toanalyze" }, "Open certificate in checker")) : null),
+      verdictHeader(r),
+      h("div", { class: "card" }, h("h3", { style: "margin-bottom:10px" }, "Rule engine, check by check"),
+        checksTable(r.verdict), h("div", { style: "height:14px" }), mlReasons(r.ml), h("div", { style: "height:12px" }), chainView(r.chain)));
+    var rb = $("#rerun");
+    if (rb) rb.addEventListener("click", async function () {
+      rb.disabled = true; rb.textContent = "Running…";
+      try {
+        var res = await fetch("/api/run/" + name, { method: "POST" });
+        DATA.runs[name] = await res.json();
+      } catch (e) { /* keep previous result */ }
+      renderDetail(name, box);
+    });
+    var ta = $("#toanalyze");
+    if (ta) ta.addEventListener("click", function () {
+      $("#a-pem").value = DATA.pems[name]; $("#a-host").value = DATA.state.host;
+      location.hash = "analyze"; showTab("analyze"); runAnalyze();
+    });
+  }
+  function renderLab() {
+    var el = clear($("#panel-lab"));
+    var box = h("div", { class: "detail" });
+    var list = h("div", { class: "list", role: "group", "aria-label": "Scenarios" });
+    function paint() {
+      clear(list);
+      DATA.state.scenarios.forEach(function (sc) {
+        var r = runOf(sc.name), ok = r.hybrid.allow;
+        list.append(h("button", { class: "item", type: "button", "aria-pressed": sc.name === selected ? "true" : "false",
+          onclick: function () { selected = sc.name; paint(); renderDetail(selected, box); } },
+          h("b", null, sc.name.replace(/_/g, " ")), pill(ok ? "allowed" : "blocked", ok ? "ok" : "bad"),
+          h("small", null, sc.description)));
+      });
+    }
+    el.append(h("div", null, h("div", { class: "eyebrow" }, "Attack lab"),
+      h("h2", { style: "font-size:26px;margin-top:8px" }, "Pick a certificate and watch the connection"),
+      h("p", { class: "sub", style: "margin-top:6px;max-width:68ch" }, "Each scenario puts a man-in-the-middle in front of the bank and presents that certificate to three different clients.")),
+      h("div", { class: "lab" }, list, box));
+    paint(); renderDetail(selected, box);
+  }
+
+  // ---- Check a certificate ------------------------------------------------------------------------
+  async function runAnalyze() {
+    var out = $("#a-out"), btn = $("#a-go");
+    btn.disabled = true; btn.textContent = "Checking…";
+    try {
+      var res = await fetch("/api/analyze", { method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ pem: $("#a-pem").value, host: $("#a-host").value,
+          require_ct: $("#a-ct").checked, revocation_hard_fail: $("#a-rev").checked }) });
+      var r = await res.json();
+      clear(out);
+      if (!res.ok) { out.append(h("div", { class: "err", role: "alert" }, r.error || "Something went wrong.")); }
+      else out.append(h("div", { class: "detail" }, verdictHeader(r),
+        h("div", { class: "card" }, h("h3", { style: "margin-bottom:10px" }, "Rule engine, check by check"), checksTable(r.verdict),
+          h("div", { style: "height:14px" }), mlReasons(r.ml), h("div", { style: "height:12px" }), chainView(r.chain))));
+    } catch (e) {
+      clear(out).append(h("div", { class: "err", role: "alert" }, "Could not reach the lab server. Is it still running?"));
+    }
+    btn.disabled = false; btn.textContent = "Check certificate";
+  }
+  function renderAnalyze() {
+    var el = clear($("#panel-analyze"));
+    var sel = h("select", { id: "a-example", "aria-label": "Load an example certificate" },
+      h("option", { value: "" }, "Load an example…"),
+      DATA.state.scenarios.map(function (sc) { return h("option", { value: sc.name }, sc.name.replace(/_/g, " ")); }));
+    var pem = h("textarea", { id: "a-pem", spellcheck: "false", placeholder: "-----BEGIN CERTIFICATE-----\n…\n-----END CERTIFICATE-----", "aria-label": "Certificate chain in PEM format" });
+    if (!LIVE) pem.setAttribute("readonly", "");
+    sel.addEventListener("change", function () { if (sel.value) pem.value = DATA.pems[sel.value]; });
+    el.append(
+      h("div", null, h("div", { class: "eyebrow" }, "Check a certificate"),
+        h("h2", { style: "font-size:26px;margin-top:8px" }, "Paste a chain and see whether the guard would let it through"),
+        h("p", { class: "sub", style: "margin-top:6px;max-width:68ch" },
+          "Server certificate first, then any intermediates, in PEM format. Chains are judged against this lab's root CA, revocation list and certificate log, so real-world certificates will fail the trust checks by design.")),
+      h("div", { class: "card form" },
+        LIVE ? null : h("div", { class: "note" }, "Checking your own certificate needs the local app. Run ", h("code", null, "python -m certlab serve"),
+          " and open this tab again. You can still read the example chains below."),
+        h("label", null, "Example chains", sel),
+        h("label", null, "Certificate chain (PEM)", pem),
+        h("label", null, "Hostname the client wanted", h("input", { type: "text", id: "a-host", value: DATA.state.host, autocomplete: "off", spellcheck: "false" })),
+        h("div", { class: "row" },
+          h("label", null, h("input", { type: "checkbox", id: "a-ct", checked: true }), "Require a certificate-log entry"),
+          h("label", null, h("input", { type: "checkbox", id: "a-rev", checked: true }), "Fail closed when no revocation list is available")),
+        h("div", { class: "actions" }, h("button", { class: "btn primary", id: "a-go", type: "button", disabled: !LIVE, onclick: runAnalyze }, "Check certificate"))),
+      h("div", { id: "a-out", "aria-live": "polite" }));
+  }
+
+  // ---- ML model ------------------------------------------------------------------------------------
+  function rocChart(roc) {
+    var W = 320, H = 260, L = 38, B = 30, T = 10, R = 12, w = W - L - R, hh = H - T - B;
+    var svg = s("svg", { viewBox: "0 0 " + W + " " + H, role: "img", "aria-label": "ROC curve", width: "100%", style: "max-width:380px" });
+    [0, 0.25, 0.5, 0.75, 1].forEach(function (t) {
+      svg.append(s("line", { x1: L, x2: L + w, y1: T + hh * (1 - t), y2: T + hh * (1 - t), class: "ax" }),
+        s("text", { x: L - 6, y: T + hh * (1 - t) + 4, "text-anchor": "end" }, t.toFixed(2)),
+        s("text", { x: L + w * t, y: T + hh + 16, "text-anchor": "middle" }, t.toFixed(2)));
+    });
+    svg.append(s("line", { x1: L, y1: T + hh, x2: L + w, y2: T, class: "diag" }));
+    var pts = roc.fpr.map(function (x, i) { return (L + w * x).toFixed(1) + "," + (T + hh * (1 - roc.tpr[i])).toFixed(1); });
+    svg.append(s("polyline", { points: pts.join(" "), class: "curve" }),
+      s("text", { x: L + w / 2, y: H - 2, "text-anchor": "middle" }, "false alarm rate"),
+      s("text", { x: 10, y: T + hh / 2, "text-anchor": "middle", transform: "rotate(-90 10 " + (T + hh / 2) + ")" }, "attacks caught"));
+    return svg;
+  }
+  function cell(v, kind) { return h("div", { class: "cell" }, bar(v, 1, kind), h("b", null, pct(v))); }
+  function renderModel() {
+    var el = clear($("#panel-model")), m = DATA.ml;
+    if (!m) { el.append(h("div", { class: "card" }, h("h3", null, "Model not trained"), h("p", { class: "sub" }, "Run python -m certlab train, then reload."))); return; }
+    var rf = m.random_forest, lr = m.logistic_regression, cm = m.confusion, d = m.dataset;
+    var kind = function (v) { return v >= 0.9 ? "ok" : v >= 0.5 ? "warn" : "bad"; };
+    el.append(
+      h("div", null, h("div", { class: "eyebrow" }, "ML model"),
+        h("h2", { style: "font-size:26px;margin-top:8px" }, "A random forest that scores risk from what the handshake shows"),
+        h("p", { class: "sub", style: "margin-top:6px;max-width:70ch" },
+          "It was trained on " + d.total.toLocaleString() + " generated certificates (" + d.benign + " good, " + d.malicious + " bad) using " + d.features +
+          " features such as lifetime, key size, name coverage and how close the hostname is to a protected name. It never sees the trust store, revocation list or CT log, so it works as a second opinion when those are unavailable.")),
+      h("div", { class: "tiles" },
+        h("div", { class: "tile" }, h("div", { class: "n" }, rf.f1.toFixed(3)), h("p", null, "F1 on " + d.test + " unseen certificates")),
+        h("div", { class: "tile" }, h("div", { class: "n" }, rf.auc.toFixed(3)), h("p", null, "ROC AUC")),
+        h("div", { class: "tile" }, h("div", { class: "n" }, rf.cv_f1_mean.toFixed(3)), h("p", null, "5-fold cross-validated F1 (± " + rf.cv_f1_std.toFixed(3) + ")")),
+        h("div", { class: "tile" }, h("div", { class: "n" }, pct(m.false_alarm.ml)), h("p", null, "of good certificates wrongly flagged")),
+        h("div", { class: "tile" }, h("div", { class: "n" }, lr.f1.toFixed(3)), h("p", null, "F1 of a plain logistic regression baseline"))),
+      h("div", { class: "card" },
+        h("h3", null, "Which approach catches which attack"),
+        h("p", { class: "note", style: "margin-bottom:10px" }, "Share of test certificates of each type that was blocked. Rows marked blind spot were never shown to the model during training."),
+        h("div", { class: "scroll-x" }, h("table", null,
+          h("thead", null, h("tr", null, h("th", null, "Attack type"), h("th", { class: "num" }, "Tested"), h("th", null, "Rules"), h("th", null, "ML"), h("th", null, "Rules + ML"))),
+          h("tbody", null,
+            m.per_kind.map(function (k, i) {
+              var first = k.blind_spot && !m.per_kind[i - 1].blind_spot;
+              return h("tr", { class: first ? "sep" : "" },
+                h("td", null, h("b", null, k.kind.replace(/_/g, " ")), k.blind_spot ? h("span", { class: "pill warn", style: "margin-left:8px" }, "blind spot for ML") : null, h("span", { class: "q" }, k.description)),
+                h("td", { class: "num" }, k.n), h("td", null, cell(k.rules, kind(k.rules))), h("td", null, cell(k.ml, kind(k.ml))), h("td", null, cell(k.hybrid, kind(k.hybrid))));
+            }),
+            h("tr", { class: "sep" }, h("td", null, h("b", null, "Average catch rate")), h("td", null), h("td", null, cell(m.catch_rate_macro.rules, kind(m.catch_rate_macro.rules))),
+              h("td", null, cell(m.catch_rate_macro.ml, kind(m.catch_rate_macro.ml))), h("td", null, cell(m.catch_rate_macro.hybrid, kind(m.catch_rate_macro.hybrid)))),
+            h("tr", null, h("td", null, h("b", null, "Good certificates wrongly blocked"), h("span", { class: "q" }, "lower is better")), h("td", null),
+              h("td", null, cell(m.false_alarm.rules, "ok")), h("td", null, cell(m.false_alarm.ml, "ok")), h("td", null, cell(m.false_alarm.hybrid, "ok")))))),
+        h("p", { class: "note", style: "margin-top:12px" },
+          "Rogue-CA, revoked and mis-issued certificates look the same as a good one on the wire, so the model cannot tell them apart. The rule engine does catch them, which is why the two are combined.")),
+      h("div", { class: "charts" },
+        h("div", { class: "card" }, h("h3", null, "Confusion matrix"), h("p", { class: "note" }, "Held-out test set, threshold " + m.threshold),
+          h("div", { class: "cm" },
+            h("div", { class: "h" }), h("div", { class: "h" }, "Said good"), h("div", { class: "h" }, "Said bad"),
+            h("div", { class: "h" }, "Was good"), h("div", { class: "v good" }, cm[0][0], h("small", null, "correct")), h("div", { class: "v miss" }, cm[0][1], h("small", null, "false alarm")),
+            h("div", { class: "h" }, "Was bad"), h("div", { class: "v miss" }, cm[1][0], h("small", null, "missed")), h("div", { class: "v good" }, cm[1][1], h("small", null, "caught")))),
+        h("div", { class: "card" }, h("h3", null, "ROC curve"), h("p", { class: "note" }, "The closer to the top-left corner, the better. Dashed line is guessing."), h("div", { style: "margin-top:8px" }, rocChart(m.roc)))),
+      h("div", { class: "card" }, h("h3", null, "What the model relies on"), h("p", { class: "note" }, "Share of the forest's decisions each feature accounts for."),
+        h("div", { class: "imp" }, m.importance.slice(0, 12).map(function (f) {
+          return h("div", null, h("span", null, f.description), bar(f.importance, m.importance[0].importance, ""), h("span", { class: "v" }, (f.importance * 100).toFixed(1) + "%"));
+        }))),
+      h("div", { class: "card" }, h("h3", null, "Read these numbers with care"),
+        h("ul", { style: "margin:8px 0 0;padding-left:18px;color:var(--ink-2)" },
+          h("li", null, "Training and test data come from the same generator, so the scores show how well the model learned this lab's attack patterns. They are not a promise about real traffic."),
+          h("li", null, "Look-alike domains are generated from the lab's six protected names, so the model has only seen those."),
+          h("li", null, "Trained " + m.trained_at + ", seed " + m.seed + ". Retrain with python -m certlab train.")))
+    );
+  }
+
+  // ---- boot ----------------------------------------------------------------------------------------
+  async function boot() {
+    var mode = $("#mode");
+    try {
+      await load();
+      mode.textContent = LIVE ? "live" : "snapshot"; mode.className = "mode" + (LIVE ? " live" : "");
+      renderOverview(); renderLab(); renderAnalyze(); renderModel(); route();
+    } catch (e) {
+      mode.textContent = "offline";
+      clear($("#panel-overview")).append(h("div", { class: "card" }, h("h3", null, "Could not load the lab"),
+        h("p", { class: "sub" }, "Start the server with python -m certlab serve and reload. " + e.message)));
+    }
+  }
+  boot();
+})();
+</script>
