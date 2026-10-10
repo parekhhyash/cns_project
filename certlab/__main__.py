@@ -67,6 +67,7 @@ def cmd_serve(a):
 
 
 def cmd_export(a):
+    logging.getLogger("certlab.decision").setLevel(logging.ERROR)   # keep the export quiet
     from .service import LabService
     from .web.page import full_page, with_data
     frag = with_data(LabService().export())
