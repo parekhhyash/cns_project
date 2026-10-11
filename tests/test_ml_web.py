@@ -18,7 +18,9 @@ def setUpModule():
     global SVC, APP, CLIENT, RISK
     assert os.path.exists(MODEL_PATH), "run: python -m certlab train"
     SVC = LabService()
+    from certlab.web.app import RateLimiter
     APP = create_app(SVC)
+    APP.limiter = RateLimiter({k: (10 ** 6, 1) for k in ("run", "live", "analyze")})   # limits tested separately
     CLIENT = APP.test_client()
     RISK = RiskModel()
 
@@ -194,6 +196,39 @@ class LiveCheck(unittest.TestCase):
         with TLSServer(chain_file, key_file) as srv:
             r = SVC.live(f"127.0.0.1:{srv.port}", _trust=SVC.lab.trust_store, _allow_private=True)
         self.assertNotIn("rated high risk by ML", r["hybrid"]["reason"])
+
+
+class Hardening(unittest.TestCase):
+    def test_healthz_and_headers(self):
+        r = CLIENT.get("/healthz")
+        self.assertEqual({"ok": True, "ml_ready": True}, r.get_json())
+        page = CLIENT.get("/")
+        self.assertIn("default-src 'none'", page.headers["Content-Security-Policy"])
+        self.assertEqual("DENY", page.headers["X-Frame-Options"])
+        self.assertEqual("nosniff", page.headers["X-Content-Type-Options"])
+        self.assertEqual("no-store", CLIENT.get("/api/state").headers["Cache-Control"])
+
+    def test_rate_limiter_window(self):
+        from certlab.web.app import RateLimiter
+        t = [0.0]
+        rl = RateLimiter({"x": (3, 10)}, clock=lambda: t[0])
+        self.assertTrue(all(rl.allow("x", "a")[0] for _ in range(3)))
+        ok, wait = rl.allow("x", "a")
+        self.assertFalse(ok)
+        self.assertGreater(wait, 0)
+        self.assertTrue(rl.allow("x", "b")[0])           # other clients unaffected
+        t[0] = 11.0
+        self.assertTrue(rl.allow("x", "a")[0])           # window slid
+
+    def test_endpoint_returns_429_with_retry_after(self):
+        from certlab.web.app import RateLimiter, create_app
+        app = create_app(SVC)
+        app.limiter = RateLimiter({"run": (1, 60), "live": (1, 60), "analyze": (1, 60)})
+        c = app.test_client()
+        self.assertEqual(400, c.post("/api/analyze", json={"pem": "x", "host": "h.test"}).status_code)
+        r = c.post("/api/analyze", json={"pem": "x", "host": "h.test"})
+        self.assertEqual(429, r.status_code)
+        self.assertIn("Retry-After", r.headers)
 
 
 class StaticExport(unittest.TestCase):
