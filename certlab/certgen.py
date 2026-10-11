@@ -187,6 +187,7 @@ class CTLog:
             with open(path) as f:
                 self.entries = json.load(f)
         self._fps = {e["fingerprint"] for e in self.entries}
+        self._by_serial = {e["serial"]: e["fingerprint"] for e in self.entries if "serial" in e}
 
     @staticmethod
     def _h(prev: str, fp: str) -> str:
@@ -197,9 +198,15 @@ class CTLog:
         if self.contains(cert):
             return
         prev = self.entries[-1]["hash"] if self.entries else "0" * 64
-        self.entries.append({"index": len(self.entries), "fingerprint": fp,
+        serial = f"{cert.serial_number:x}"
+        self.entries.append({"index": len(self.entries), "fingerprint": fp, "serial": serial,
                              "hash": self._h(prev, fp)})
         self._fps.add(fp)
+        self._by_serial[serial] = fp
+
+    def fingerprint_for_serial(self, cert: x509.Certificate) -> str | None:
+        """What the CA recorded when it issued this serial number, if anything."""
+        return self._by_serial.get(f"{cert.serial_number:x}")
 
     def contains(self, cert: x509.Certificate) -> bool:
         return fingerprint(cert) in self._fps
@@ -222,8 +229,9 @@ class Scenario:
     name: str
     description: str
     identity: Identity
-    expect: str                 # "allow" | "block"
+    expect: str                 # "allow" | "block" (allow = trusted, block = anything else)
     expected_failures: tuple[str, ...] = ()
+    level: str = "blocked"      # expected verdict level: trusted | suspicious | blocked
 
 
 class Lab:
@@ -253,15 +261,16 @@ class Lab:
             self.ct.add(ident.cert)
         return ident
 
-    def _add(self, name, desc, ident, expect, fails=(), ct=True):
-        self.scenarios.append(Scenario(name, desc, self._logged(ident, ct), expect, tuple(fails)))
+    def _add(self, name, desc, ident, expect, fails=(), ct=True, level=None):
+        level = level or ("trusted" if expect == "allow" else "blocked")
+        self.scenarios.append(Scenario(name, desc, self._logged(ident, ct), expect, tuple(fails), level))
 
     def _build(self):
         i = self.inter
         self._add("legitimate", "Valid chain, correct host, logged in CT",
                   issue_leaf(i), "allow")
         self._add("self_signed", "Attacker self-signs a cert for the host",
-                  make_self_signed(), "block", ["chain"], ct=False)
+                  make_self_signed(), "block", ["chain"], ct=False, level="suspicious")
         self._add("expired", "Genuine CA-issued cert that expired 30 days ago",
                   issue_leaf(i, not_before_days=-120, valid_days=90), "block", ["validity"])
         self._add("not_yet_valid", "Cert whose validity starts in the future",
@@ -271,7 +280,7 @@ class Lab:
         self._add("cn_only_no_san", "Right CN but no SAN (modern clients ignore CN)",
                   issue_leaf(i, sans=[]), "block", ["hostname"])
         self._add("rogue_ca", "Cert issued by a CA that is in no trust store",
-                  issue_leaf(self.rogue_inter), "block", ["chain"], ct=False)
+                  issue_leaf(self.rogue_inter), "block", ["chain"], ct=False, level="suspicious")
         self._revoked = issue_leaf(i)
         self._add("revoked", "Valid-looking cert whose serial is on the CRL",
                   self._revoked, "block", ["revocation"])
@@ -279,9 +288,21 @@ class Lab:
                   "block", ["strength"])
         self._add("weak_signature", "Cert signed with SHA-1",
                   issue_sha1_leaf(i), "block", ["strength"])
+        self._add("tampered", "Real cert for evil.lab.test with its name edited to bank.lab.test",
+                  self._tampered(), "block", ["signature", "integrity"], ct=False)
         self._add("compromised_ca_misissue",
                   "Trusted CA mis-issues a cert (DigiNotar-style) but it never reaches CT logs",
-                  issue_leaf(i), "block", ["ct"], ct=False)
+                  issue_leaf(i), "block", ["ct"], ct=False, level="suspicious")
+
+    def _tampered(self) -> Identity:
+        """A real certificate the CA issued for another site, with the name edited to
+        the bank's. Same length, so the DER stays well-formed, but the signature no
+        longer covers the bytes."""
+        orig = self._logged(issue_leaf(self.inter, "evil.lab.test"))
+        der = orig.cert.public_bytes(serialization.Encoding.DER)
+        assert HOST.encode() != b"evil.lab.test" and len(HOST) == len("evil.lab.test")
+        forged = x509.load_der_x509_certificate(der.replace(b"evil.lab.test", HOST.encode()))
+        return Identity(forged, orig.key, orig.chain)
 
     def _write_files(self):
         w = self.workdir

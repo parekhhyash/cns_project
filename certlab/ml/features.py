@@ -120,7 +120,7 @@ def extract(chain: list[x509.Certificate], hostname: str, now: dt.datetime | Non
         "cn_in_san": int(cn in dns),
         "key_is_rsa": int(is_rsa),
         "key_bits": bits,
-        "sig_weak": int(h is None or isinstance(h, (hashes.MD5, hashes.SHA1))),
+        "sig_weak": int(isinstance(h, (hashes.MD5, hashes.SHA1))),
         "has_eku": int(_ext(leaf, x509.ExtendedKeyUsage) is not None),
         "has_ski": int(_ext(leaf, x509.SubjectKeyIdentifier) is not None),
         "has_aki": int(_ext(leaf, x509.AuthorityKeyIdentifier) is not None),

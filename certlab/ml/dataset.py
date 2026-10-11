@@ -13,7 +13,8 @@ from __future__ import annotations
 import random
 from dataclasses import dataclass
 
-from cryptography.hazmat.primitives import hashes
+from cryptography import x509
+from cryptography.hazmat.primitives import hashes, serialization
 
 from ..certgen import (CTLog, Identity, issue_leaf, issue_sha1_leaf, make_ca, make_crl,
                        make_self_signed, new_key)
@@ -35,6 +36,7 @@ TRAIN_ATTACKS = {
 BLIND_KINDS = {
     "rogue_ca": "Issued by a CA nobody trusts",
     "revoked": "Valid-looking cert that was revoked",
+    "tampered": "Name edited after signing (signature no longer verifies)",
     "misissued_not_in_ct": "Trusted CA mis-issue never logged in CT",
 }
 ALL_KINDS = {"benign": "Legitimate certificate", **TRAIN_ATTACKS, **BLIND_KINDS}
@@ -189,6 +191,17 @@ class Factory:
         elif kind == "revoked":
             ident = self.leaf(host); self._log(ident)
             self.revoked.append(ident.cert.serial_number)
+        elif kind == "tampered":
+            target = r.choice(["bank", "mail", "shop", "blog", "wiki", "docs"])
+            other = "".join(r.choice("abcdefghijklmnopqrstuvwxyz") for _ in range(4))
+            while other == target:
+                other = "".join(r.choice("abcdefghijklmnopqrstuvwxyz") for _ in range(4))
+            orig = self._log(self.leaf(f"{other}.{DOMAIN}"))
+            der = orig.cert.public_bytes(serialization.Encoding.DER)
+            forged = x509.load_der_x509_certificate(
+                der.replace(f"{other}.{DOMAIN}".encode(), f"{target}.{DOMAIN}".encode()))
+            ident = Identity(forged, orig.key, orig.chain)
+            host = f"{target}.{DOMAIN}"
         elif kind == "misissued_not_in_ct":
             ident = self.leaf(host)             # valid chain, never logged
         else:

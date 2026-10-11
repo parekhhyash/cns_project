@@ -68,7 +68,7 @@ class Model(unittest.TestCase):
 
     def test_blind_spots_are_documented_behaviour(self):
         # context-only attacks look normal on the wire: the model must not pretend to see them
-        for name in ("rogue_ca", "revoked", "compromised_ca_misissue"):
+        for name in ("rogue_ca", "revoked", "tampered", "compromised_ca_misissue"):
             with self.subTest(name):
                 self.assertFalse(RISK.score(chain_of(name), "bank.lab.test")["flag"])
 
@@ -95,7 +95,7 @@ class Api(unittest.TestCase):
 
     def test_state(self):
         d = CLIENT.get("/api/state").get_json()
-        self.assertEqual(11, len(d["scenarios"]))
+        self.assertEqual(12, len(d["scenarios"]))
         self.assertTrue(d["ml_ready"])
 
     def test_run_attack_is_blocked_by_hybrid_and_leaks_to_naive(self):
@@ -108,6 +108,17 @@ class Api(unittest.TestCase):
         d = CLIENT.post("/api/analyze", json={"pem": SVC.pem("legitimate"), "host": "bank.lab.test"}).get_json()
         self.assertTrue(d["hybrid"]["allow"])
         self.assertEqual(100, d["verdict"]["score"])
+
+    def test_tampered_is_blocked_by_rules_while_ml_sees_nothing(self):
+        d = CLIENT.post("/api/run/tampered").get_json()
+        self.assertEqual("blocked", d["hybrid"]["level"])
+        self.assertFalse(d["ml"]["flag"])
+        self.assertTrue(d["clients"]["naive"]["leaked"])
+        self.assertFalse(d["clients"]["guarded"]["connected"])
+
+    def test_levels_exposed(self):
+        self.assertEqual("suspicious", CLIENT.post("/api/run/rogue_ca").get_json()["hybrid"]["level"])
+        self.assertEqual("trusted", CLIENT.post("/api/run/legitimate").get_json()["hybrid"]["level"])
 
     def test_run_legitimate_allowed(self):
         d = CLIENT.post("/api/run/legitimate").get_json()
@@ -135,6 +146,54 @@ class Api(unittest.TestCase):
         lax = CLIENT.post("/api/analyze", json={"pem": pem, "host": "bank.lab.test", "require_ct": False}).get_json()
         self.assertFalse(strict["verdict"]["allow"])
         self.assertTrue(lax["verdict"]["allow"])
+
+
+class LiveCheck(unittest.TestCase):
+    def test_parse_target(self):
+        from certlab.live import parse_target
+        self.assertEqual(("example.com", 443), parse_target("Example.com"))
+        self.assertEqual(("example.com", 8443), parse_target("https://example.com:8443/a/b"))
+        for bad in ("", "   ", "not a host", "a" * 300 + ".com", "x.com:99999"):
+            with self.subTest(bad[:12]):
+                with self.assertRaises(ValueError):
+                    parse_target(bad)
+
+    def test_private_and_local_targets_refused(self):
+        for t in ("localhost", "127.0.0.1", "10.0.0.5", "192.168.1.1", "169.254.169.254", "[::1]"):
+            with self.subTest(t):
+                r = CLIENT.post("/api/live", json={"target": t})
+                self.assertEqual(400, r.status_code, r.get_data(as_text=True))
+                self.assertIn("private or local", r.get_json()["error"])
+
+    def test_only_https_ports_and_json(self):
+        self.assertEqual(400, CLIENT.post("/api/live", json={"target": "example.com:22"}).status_code)
+        self.assertEqual(400, CLIENT.post("/api/live", json={"target": ""}).status_code)
+        self.assertEqual(415, CLIENT.post("/api/live", data="target=example.com").status_code)
+
+    def test_reads_a_real_tls_handshake_and_judges_it(self):
+        from certlab import live as livemod
+        from certlab.netlab import TLSServer
+        chain_file, key_file = SVC.lab.paths(SVC.lab.get("legitimate"))
+        with TLSServer(chain_file, key_file) as srv:
+            got = livemod.fetch("127.0.0.1", srv.port, allow_private=True)
+            self.assertEqual(3, len(got.chain))
+            self.assertTrue(got.tls_version.startswith("TLS"))
+            r = SVC.live(f"127.0.0.1:{srv.port}", _trust=SVC.lab.trust_store, _allow_private=True)
+        checks = {c["name"]: c["status"] for c in r["verdict"]["checks"]}
+        self.assertEqual("pass", checks["signature"])
+        self.assertEqual("pass", checks["chain"])
+        self.assertEqual("fail", checks["hostname"])      # we asked for an IP, the cert names bank.lab.test
+        self.assertEqual("blocked", r["hybrid"]["level"])
+        self.assertTrue(r["ml_advisory"])
+        self.assertEqual(srv.port, r["live"]["port"])
+        self.assertEqual(64 + 31, len(r["chain"][0]["sha256"]))   # full colon-separated SHA-256
+
+    def test_live_ignores_ml_for_the_decision(self):
+        from certlab.netlab import TLSServer
+        chain_file, key_file = SVC.lab.paths(SVC.lab.get("legitimate"))
+        with TLSServer(chain_file, key_file) as srv:
+            r = SVC.live(f"127.0.0.1:{srv.port}", _trust=SVC.lab.trust_store, _allow_private=True)
+        self.assertNotIn("rated high risk by ML", r["hybrid"]["reason"])
 
 
 class StaticExport(unittest.TestCase):

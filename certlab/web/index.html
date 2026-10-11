@@ -106,7 +106,7 @@ section.tab { padding-block: 28px 0; display: flex; flex-direction: column; gap:
   padding: 9px 14px; border: 3px solid currentColor; border-radius: 6px; transform: rotate(-2.5deg);
   box-shadow: inset 0 0 0 1px currentColor;
 }
-.stamp.ok { color: var(--ok); } .stamp.bad { color: var(--bad); }
+.stamp.ok { color: var(--ok); } .stamp.bad { color: var(--bad); } .stamp.warn { color: var(--warn); }
 .pill { display: inline-block; font: 600 11px/1 var(--font-mono); letter-spacing: 0.06em; text-transform: uppercase; padding: 4px 7px; border-radius: 4px; }
 .pill.pass, .pill.ok { background: var(--ok-bg); color: var(--ok); }
 .pill.fail, .pill.bad { background: var(--bad-bg); color: var(--bad); }
@@ -166,6 +166,9 @@ summary { cursor: pointer; font-weight: 600; }
 .btn:disabled { opacity: 0.55; cursor: not-allowed; }
 
 /* analyze */
+.live-row { display: flex; flex-wrap: wrap; gap: 10px; align-items: end; }
+.live-row label { flex: 1 1 260px; }
+.fp { font-family: var(--font-mono); font-size: 12px; overflow-wrap: anywhere; }
 .form { display: grid; gap: 12px; }
 .form label { display: grid; gap: 4px; font-weight: 600; font-size: 13.5px; }
 textarea, input[type="text"], select {
@@ -285,7 +288,7 @@ footer { margin-top: 40px; padding-top: 16px; border-top: 1px solid var(--line);
     return e;
   }
   function $(sel) { return document.querySelector(sel); }
-  function pct(x) { return Math.round(x * 100) + "%"; }
+  function pct(x) { return (x > 0.995 && x < 1) ? (x * 100).toFixed(1) + "%" : Math.round(x * 100) + "%"; }
   function clear(el) { while (el.firstChild) el.removeChild(el.firstChild); return el; }
   function pill(text, kind) { return h("span", { class: "pill " + kind }, text); }
   function shortErr(e) { return String(e || "").replace(/\s*\(_ssl\.c:\d+\)\.?/, "").replace(/^\[SSL: [A-Z_]+\]\s*/, ""); }
@@ -296,17 +299,21 @@ footer { margin-top: 40px; padding-top: 16px; border-top: 1px solid var(--line);
   }
 
   var CHECKS = {
-    chain: ["Chain of trust", "Does the chain lead to a root we trust?"],
+    signature: ["Digital signature", "Did the issuer's private key really sign this certificate?"],
+    chain: ["Issuer & trust chain", "Does the chain lead to a root we trust?"],
     validity: ["Validity dates", "Is today inside every certificate's dates?"],
     hostname: ["Hostname", "Does the certificate name the site we asked for?"],
+    integrity: ["Certificate intact", "Is it byte-for-byte what the CA issued (SHA-256)?"],
     revocation: ["Revocation", "Has the CA cancelled this certificate?"],
     ct: ["Public log (CT)", "Was it recorded in the public certificate log?"],
     strength: ["Crypto strength", "Are the key and signature strong enough?"]
   };
+  var LEVEL = { trusted: ["Trusted", "ok"], suspicious: ["Suspicious", "warn"], blocked: ["Blocked", "bad"] };
   var BINARY = /^(self_signed|host_match|has_|san_wildcard|cn_in_san|key_is_rsa|sig_weak|leaf_is_ca|brand_exact|brand_substring|leet_swap)/;
   function fmtFeature(name, v) { return BINARY.test(name) ? (v ? "yes" : "no") : String(Math.round(v * 100) / 100); }
 
   // ---- tabs --------------------------------------------------------------------------------------
+  var CHECK_ORDER = ["signature", "chain", "validity", "hostname", "integrity", "revocation", "ct", "strength"];
   var TABS = ["overview", "lab", "analyze", "model"];
   function showTab(name) {
     if (TABS.indexOf(name) < 0) name = "overview";
@@ -348,8 +355,8 @@ footer { margin-top: 40px; padding-top: 16px; border-top: 1px solid var(--line);
     var atk = attacks();
     var leaked = atk.filter(function (a) { return runOf(a.name).clients.naive.leaked; }).length;
     var stdOk = atk.filter(function (a) { return runOf(a.name).clients.stdlib.connected; }).length;
-    var guard = atk.filter(function (a) { return !runOf(a.name).clients.guarded.connected; }).length;
-    var hyb = atk.filter(function (a) { return !runOf(a.name).hybrid.allow; }).length;
+    var held = atk.filter(function (a) { return !runOf(a.name).hybrid.allow; });
+    var nBlocked = held.filter(function (a) { return runOf(a.name).hybrid.level === "blocked"; }).length;
     var ml = DATA.ml;
 
     el.append(
@@ -357,42 +364,53 @@ footer { margin-top: 40px; padding-top: 16px; border-top: 1px solid var(--line);
         h("div", { class: "eyebrow" }, "Certificate validation testbed"),
         h("h1", null, "A padlock shows the line is private. It does not show who is on the other end."),
         h("p", null, "This lab plays a man-in-the-middle against a pretend bank using " + atk.length +
-          " kinds of bad certificate, then shows how a rule engine and a small machine-learning model decide which connections to trust.")),
+          " kinds of bad certificate, then shows how eight cryptographic checks and a small machine-learning model decide whether a server can be trusted.")),
       h("div", { class: "stats" },
         h("div", { class: "stat bad" }, h("div", { class: "n" }, leaked, h("small", null, " / " + atk.length)),
           h("p", null, "attacks where an app with validation switched off handed its password to the attacker")),
         h("div", { class: "stat warn" }, h("div", { class: "n" }, stdOk, h("small", null, " / " + atk.length)),
           h("p", null, "fake certificates that Python's own default checks still accepted")),
-        h("div", { class: "stat ok" }, h("div", { class: "n" }, guard, h("small", null, " / " + atk.length)),
-          h("p", null, "attacks stopped before any data was sent, by the guard's six rule checks")),
+        h("div", { class: "stat ok" }, h("div", { class: "n" }, held.length, h("small", null, " / " + atk.length)),
+          h("p", null, "attacks stopped before any data was sent: " + nBlocked + " blocked, " + (held.length - nBlocked) + " held back as suspicious")),
         ml ? h("div", { class: "stat ok" }, h("div", { class: "n" }, pct(ml.catch_rate_macro.hybrid)),
           h("p", null, "average catch rate over " + ml.per_kind.length + " attack types with rules + ML together (rules alone " +
             pct(ml.catch_rate_macro.rules) + ", ML alone " + pct(ml.catch_rate_macro.ml) + ")")) : null),
       h("div", null,
         h("div", { class: "eyebrow", style: "margin-bottom:10px" }, "How the lab works"),
         h("ol", { class: "steps" },
-          h("li", null, h("b", null, "Make certificates"), h("span", null, "A private root and intermediate CA issue one good certificate and ten bad ones.")),
+          h("li", null, h("b", null, "Make certificates"), h("span", null, "A private root and intermediate CA issue one good certificate and a set of bad ones, including one edited after signing.")),
           h("li", null, h("b", null, "Deploy"), h("span", null, "A pretend bank serves TLS on this machine only.")),
           h("li", null, h("b", null, "Attack"), h("span", null, "A man-in-the-middle proxy answers the client with a bad certificate and reads what it can.")),
-          h("li", null, h("b", null, "Inspect"), h("span", null, "Six rule checks and an ML risk score examine the chain before any password is sent.")),
-          h("li", null, h("b", null, "Decide"), h("span", null, "Allow or block, with the reason logged. Blocked means nothing leaked.")))),
+          h("li", null, h("b", null, "Inspect"), h("span", null, "Eight checks and an ML risk score examine the chain before any password is sent.")),
+          h("li", null, h("b", null, "Decide"), h("span", null, "Trusted, suspicious or blocked, with the reason logged. Nothing is sent unless it is trusted.")))),
       h("div", { class: "two" },
-        h("div", { class: "card" }, h("h3", null, "What the six rules check"),
-          h("ul", null, Object.keys(CHECKS).map(function (k) { return h("li", null, h("b", null, CHECKS[k][0] + ": "), CHECKS[k][1]); }))),
+        h("div", { class: "card" }, h("h3", null, "The eight checks"),
+          h("ul", null, CHECK_ORDER.map(function (k) { return h("li", null, h("b", null, CHECKS[k][0] + ": "), CHECKS[k][1]); }))),
+        h("div", { class: "card" }, h("h3", null, "What the three verdicts mean"),
+          h("ul", null,
+            h("li", null, pill("trusted", "ok"), " Every critical check passed. The connection may proceed."),
+            h("li", null, pill("suspicious", "warn"), " The signatures are genuine but trust cannot be established: an unknown issuer, a self-signed certificate, or a certificate never logged. Held back for a decision."),
+            h("li", null, pill("blocked", "bad"), " Something is provably wrong: a bad signature, an edited certificate, expired dates, the wrong hostname, a revoked or weak certificate.")),
+          h("p", { class: "note", style: "margin-top:10px" }, "A valid signature alone never means trusted. Signature and trust chain are separate checks.")),
+        h("div", { class: "card" }, h("h3", null, "Where the cryptography and the networking are"),
+          h("ul", null,
+            h("li", null, h("b", null, "Hashing: "), "a SHA-256 fingerprint of every certificate. Change one byte and it changes."),
+            h("li", null, h("b", null, "Public-key signatures: "), "each certificate's signature is verified with its issuer's public key (ECDSA or RSA)."),
+            h("li", null, h("b", null, "TLS: "), "real handshakes on real sockets, a man-in-the-middle proxy, and a live check of public servers."))),
         h("div", { class: "card" }, h("h3", null, "What the ML model adds"),
           h("p", { class: "sub" }, "The model reads only what is visible in the handshake, with no trust store, revocation list or log lookup. " +
             "It learns patterns the rules never mention: unusually long lifetimes, missing extensions, huge name lists and look-alike domains such as b4nk or bank-secure."),
-          h("p", { class: "sub", style: "margin-top:8px" }, "Used together, a connection is allowed only if the rules pass and the model rates it low risk (" +
-            hyb + " of " + atk.length + " lab attacks end up blocked).")),
+          h("p", { class: "sub", style: "margin-top:8px" }, "It can only make a trusted verdict more cautious, never less.")),
         h("div", { class: "card" }, h("h3", null, "Limits worth knowing"),
           h("ul", null,
-            h("li", null, "Everything is synthetic and local. The ML numbers measure this generator, not the real internet."),
+            h("li", null, "The lab is synthetic and local. The ML numbers measure this generator, not the real internet."),
             h("li", null, "The certificate log and revocation list are local files standing in for public CT logs and CRLs. There is no OCSP."),
-            h("li", null, "The attacker is a small Python proxy, not mitmproxy or bettercap."))),
+            h("li", null, "The attacker is a small Python proxy, not mitmproxy or bettercap."),
+            h("li", null, "Live checks make one read-only handshake. They never attack or log in to a server."))),
         h("div", { class: "card" }, h("h3", null, LIVE ? "You are running the live app" : "This is a shared snapshot"),
           h("p", { class: "sub" }, LIVE
-            ? "Every scenario here ran on real sockets just now. You can re-run any attack and paste your own certificate chain."
-            : "These results were recorded from a real run of the lab. To re-run attacks and check your own certificates, start the app with: python -m certlab serve"))));
+            ? "Every scenario here ran on real sockets just now. You can re-run any attack, paste your own certificate chain, or check a real website."
+            : "These results were recorded from a real run of the lab. To re-run attacks, paste your own certificate or check a real website, start the app with: python -m certlab serve"))));
   }
 
   // ---- result view (shared by Attack lab and Check a certificate) -----------------------
@@ -446,18 +464,19 @@ footer { margin-top: 40px; padding-top: 16px; border-top: 1px solid var(--line);
             h("dt", null, "Key"), h("dd", null, c.key),
             h("dt", null, "Signature"), h("dd", null, c.signature),
             h("dt", null, "Serial"), h("dd", { class: "mono" }, c.serial),
-            h("dt", null, "SHA-256"), h("dd", { class: "mono" }, c.sha256 + "…")));
+            h("dt", null, "SHA-256"), h("dd", { class: "fp" }, c.sha256)));
       })));
   }
   function verdictHeader(r) {
-    var ok = r.hybrid.allow;
+    var lv = LEVEL[r.hybrid.level];
+    var v = r.verdict;
     return h("div", { class: "card" },
       h("div", { class: "verdict" },
         h("div", { style: "min-width:0" },
-          h("div", { class: "eyebrow" }, "Final decision, rules + ML"),
+          h("div", { class: "eyebrow" }, r.ml_advisory ? "Final decision, rules" : "Final decision, rules + ML"),
           h("h2", null, r.hybrid.reason),
-          h("p", { class: "why" }, "Rule engine: " + (r.verdict.allow ? "allowed" : "blocked, " + r.verdict.reason) + ".")),
-        h("span", { class: "stamp " + (ok ? "ok" : "bad"), role: "img", "aria-label": ok ? "Allowed" : "Blocked" }, ok ? "Allowed" : "Blocked")),
+          h("p", { class: "why" }, "Rule engine: " + v.level + (v.allow ? "" : ", " + v.reason) + ".")),
+        h("span", { class: "stamp " + lv[1], role: "img", "aria-label": lv[0] }, lv[0])),
       meters(r));
   }
 
@@ -477,10 +496,11 @@ footer { margin-top: 40px; padding-top: 16px; border-top: 1px solid var(--line);
         ? (attack ? h("p", null, pill("fooled", "bad"), "Accepted the certificate. A bad certificate got through.") : h("p", null, pill("ok", "ok"), "Accepted the genuine certificate."))
         : h("p", null, pill("refused", attack ? "ok" : "bad"), shortErr(std.error))));
     // guarded
-    var g = c.guarded;
+    var g = c.guarded, lvl = r.hybrid.level;
     rows.push(h("div", { class: "client" },
       h("b", null, "Client behind the guard", h("small", null, "rules, then ML, before any data")),
-      r.hybrid.allow && g.connected ? h("p", null, pill("allowed", "ok"), "Checks passed. The password was sent to the real bank.")
+      lvl === "trusted" && g.connected ? h("p", null, pill("trusted", "ok"), "Checks passed. The password was sent to the real bank.")
+        : lvl === "suspicious" ? h("p", null, pill("held back", "warn"), "Closed the connection before sending anything, because trust could not be established. " + (g.error ? g.error + "." : "The ML model raised the alarm."))
         : h("p", null, pill("stopped", "ok"), "Closed the connection before sending anything. " + (g.error ? "Rule engine: " + g.error + "." : "The ML model raised the alarm."))));
     return h("div", { class: "clients" }, rows);
   }
@@ -521,10 +541,10 @@ footer { margin-top: 40px; padding-top: 16px; border-top: 1px solid var(--line);
     function paint() {
       clear(list);
       DATA.state.scenarios.forEach(function (sc) {
-        var r = runOf(sc.name), ok = r.hybrid.allow;
+        var r = runOf(sc.name), lv = LEVEL[r.hybrid.level];
         list.append(h("button", { class: "item", type: "button", "aria-pressed": sc.name === selected ? "true" : "false",
           onclick: function () { selected = sc.name; paint(); renderDetail(selected, box); } },
-          h("b", null, sc.name.replace(/_/g, " ")), pill(ok ? "allowed" : "blocked", ok ? "ok" : "bad"),
+          h("b", null, sc.name.replace(/_/g, " ")), pill(lv[0].toLowerCase(), lv[1]),
           h("small", null, sc.description)));
       });
     }
@@ -536,23 +556,47 @@ footer { margin-top: 40px; padding-top: 16px; border-top: 1px solid var(--line);
   }
 
   // ---- Check a certificate ------------------------------------------------------------------------
-  async function runAnalyze() {
-    var out = $("#a-out"), btn = $("#a-go");
-    btn.disabled = true; btn.textContent = "Checking…";
+  function mlBlock(r) {
+    if (r.ml_advisory) {
+      return h("div", null, h("h3", null, "ML risk, for reference"),
+        h("p", { class: "note", style: "margin-top:4px" }, "The model was trained on lab certificates only, so it does not influence live decisions. It scored this certificate at " + pct(r.ml.risk) + "."));
+    }
+    return mlReasons(r.ml);
+  }
+  function liveFacts(r) {
+    var l = r.live;
+    return h("div", { class: "card" }, h("div", { class: "eyebrow" }, "Live connection"),
+      h("dl", { class: "kv" },
+        h("dt", null, "Server"), h("dd", null, l.host + ":" + l.port),
+        h("dt", null, "Address"), h("dd", null, l.ip + (l.proxied ? " (through a proxy)" : "")),
+        h("dt", null, "TLS"), h("dd", null, l.tls + ", " + l.cipher),
+        h("dt", null, "Sent"), h("dd", null, l.sent + " certificate" + (l.sent === 1 ? "" : "s")),
+        h("dt", null, "Trusted roots"), h("dd", null, l.trusted_roots + " root certificates from this computer")));
+  }
+  function resultCards(r) {
+    return h("div", { class: "detail" }, r.live ? liveFacts(r) : null, verdictHeader(r),
+      h("div", { class: "card" }, h("h3", { style: "margin-bottom:10px" }, "Checks, one by one"), checksTable(r.verdict),
+        h("div", { style: "height:14px" }), mlBlock(r), h("div", { style: "height:12px" }), chainView(r.chain)));
+  }
+  async function post(url, body, btn, label, busy, out) {
+    btn.disabled = true; btn.textContent = busy;
     try {
-      var res = await fetch("/api/analyze", { method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ pem: $("#a-pem").value, host: $("#a-host").value,
-          require_ct: $("#a-ct").checked, revocation_hard_fail: $("#a-rev").checked }) });
+      var res = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
       var r = await res.json();
       clear(out);
-      if (!res.ok) { out.append(h("div", { class: "err", role: "alert" }, r.error || "Something went wrong.")); }
-      else out.append(h("div", { class: "detail" }, verdictHeader(r),
-        h("div", { class: "card" }, h("h3", { style: "margin-bottom:10px" }, "Rule engine, check by check"), checksTable(r.verdict),
-          h("div", { style: "height:14px" }), mlReasons(r.ml), h("div", { style: "height:12px" }), chainView(r.chain))));
+      if (!res.ok) out.append(h("div", { class: "err", role: "alert" }, r.error || "Something went wrong."));
+      else out.append(resultCards(r));
     } catch (e) {
       clear(out).append(h("div", { class: "err", role: "alert" }, "Could not reach the lab server. Is it still running?"));
     }
-    btn.disabled = false; btn.textContent = "Check certificate";
+    btn.disabled = false; btn.textContent = label;
+  }
+  function runAnalyze() {
+    return post("/api/analyze", { pem: $("#a-pem").value, host: $("#a-host").value,
+      require_ct: $("#a-ct").checked, revocation_hard_fail: $("#a-rev").checked }, $("#a-go"), "Check certificate", "Checking…", $("#a-out"));
+  }
+  function runLive() {
+    return post("/api/live", { target: $("#l-target").value }, $("#l-go"), "Check live", "Connecting…", $("#l-out"));
   }
   function renderAnalyze() {
     var el = clear($("#panel-analyze"));
@@ -562,14 +606,23 @@ footer { margin-top: 40px; padding-top: 16px; border-top: 1px solid var(--line);
     var pem = h("textarea", { id: "a-pem", spellcheck: "false", placeholder: "-----BEGIN CERTIFICATE-----\n…\n-----END CERTIFICATE-----", "aria-label": "Certificate chain in PEM format" });
     if (!LIVE) pem.setAttribute("readonly", "");
     sel.addEventListener("change", function () { if (sel.value) pem.value = DATA.pems[sel.value]; });
+    var target = h("input", { type: "text", id: "l-target", placeholder: "example.com", autocomplete: "off", spellcheck: "false", disabled: !LIVE });
+    target.addEventListener("keydown", function (e) { if (e.key === "Enter" && LIVE) runLive(); });
     el.append(
       h("div", null, h("div", { class: "eyebrow" }, "Check a certificate"),
-        h("h2", { style: "font-size:26px;margin-top:8px" }, "Paste a chain and see whether the guard would let it through"),
-        h("p", { class: "sub", style: "margin-top:6px;max-width:68ch" },
-          "Server certificate first, then any intermediates, in PEM format. Chains are judged against this lab's root CA, revocation list and certificate log, so real-world certificates will fail the trust checks by design.")),
+        h("h2", { style: "font-size:26px;margin-top:8px" }, "Check a real website, or paste a certificate"),
+        h("p", { class: "sub", style: "margin-top:6px;max-width:68ch" }, "Both modes run the same checks and give the same three verdicts.")),
       h("div", { class: "card form" },
-        LIVE ? null : h("div", { class: "note" }, "Checking your own certificate needs the local app. Run ", h("code", null, "python -m certlab serve"),
-          " and open this tab again. You can still read the example chains below."),
+        h("div", null, h("h3", null, "Mode 1: a real website"),
+          h("p", { class: "note" }, "Makes one TLS handshake to read the certificate the server presents, then judges it against the trusted roots on this computer. No data is sent, and private or local addresses are refused.")),
+        LIVE ? null : h("div", { class: "note" }, "Live checks need the local app. Run ", h("code", null, "python -m certlab serve"), " and open this tab again."),
+        h("div", { class: "live-row" }, h("label", null, "Domain", target),
+          h("button", { class: "btn primary", id: "l-go", type: "button", disabled: !LIVE, onclick: runLive }, "Check live"))),
+      h("div", { id: "l-out", "aria-live": "polite" }),
+      h("div", { class: "card form" },
+        h("div", null, h("h3", null, "Mode 2: a certificate you paste"),
+          h("p", { class: "note" }, "Server certificate first, then any intermediates, in PEM format. These are judged against this lab's own root CA, revocation list and log, so real-world certificates will fail the trust checks by design.")),
+        LIVE ? null : h("div", { class: "note" }, "Pasting needs the local app. You can still read the example chains below."),
         h("label", null, "Example chains", sel),
         h("label", null, "Certificate chain (PEM)", pem),
         h("label", null, "Hostname the client wanted", h("input", { type: "text", id: "a-host", value: DATA.state.host, autocomplete: "off", spellcheck: "false" })),

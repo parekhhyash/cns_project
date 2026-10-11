@@ -2,9 +2,11 @@
 from __future__ import annotations
 
 import os
+import ssl
 
 from flask import Flask, Response, abort, jsonify, request
 
+from ..live import parse_target
 from ..service import LabService
 from .page import full_page
 
@@ -52,6 +54,22 @@ def create_app(service: LabService | None = None) -> Flask:
             return jsonify(svc.run(name))
         except StopIteration:
             abort(404)
+
+    @app.post("/api/live")
+    def live():
+        if not request.is_json:
+            abort(415)
+        target = str((request.get_json(silent=True) or {}).get("target", ""))
+        try:
+            host, port = parse_target(target)
+            if port not in (443, 8443):
+                raise ValueError("Live checks are limited to ports 443 and 8443.")
+            return jsonify(svc.live(target))
+        except ValueError as e:
+            return jsonify({"error": str(e)}), 400
+        except (OSError, ssl.SSLError) as e:
+            return jsonify({"error": f"Could not complete a TLS handshake with {target.strip()}: "
+                                     f"{str(e).split('] ')[-1][:140] or type(e).__name__}"}), 502
 
     @app.post("/api/analyze")
     def analyze():

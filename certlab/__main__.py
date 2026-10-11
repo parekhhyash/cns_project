@@ -1,4 +1,4 @@
-"""CLI:  python -m certlab demo | serve | train | export | analyze HOST:PORT | generate DIR"""
+"""CLI:  python -m certlab demo | serve | check DOMAIN | train | export | analyze 127.0.0.1:PORT | generate DIR"""
 from __future__ import annotations
 
 import argparse
@@ -19,8 +19,8 @@ def cmd_demo(a):
         o = run_scenario(lab, sc, via_mitm=sc.name != "legitimate")
         if a.verbose:
             print(f"\n== {sc.name}: {sc.description}\n{o.verdict.report()}")
-        decision = "allow" if o.verdict.allow else "block"
-        ok = decision == sc.expect and all(f in o.verdict.failed for f in sc.expected_failures)
+        decision = o.verdict.level
+        ok = decision == sc.level and all(f in o.verdict.failed for f in sc.expected_failures)
         bad += not ok
         rows.append((sc.name, o.stdlib.connected, "LEAKED" if o.naive_leaked else "ok",
                      f"{decision.upper()} ({o.verdict.score})", ",".join(o.verdict.failed) or "-",
@@ -42,14 +42,45 @@ def cmd_generate(a):
 
 
 def cmd_analyze(a):
+    """Judge a *local lab* TLS endpoint (127.0.0.1:PORT) against the lab's trust material."""
     host, _, port = a.target.rpartition(":")
+    if host not in ("", "127.0.0.1", "localhost"):
+        print("analyze only reads local lab servers. For a real website use: python -m certlab check DOMAIN")
+        return 1
     lab = Lab(a.lab_dir) if a.lab_dir else None
     analyzer = make_analyzer(lab) if lab else Analyzer([])
-    tls, chain = fetch_chain(int(port), a.sni or host)
+    sni = a.sni or HOST
+    tls, chain = fetch_chain(int(port), sni)
     tls.close()
-    v = analyzer.analyze(chain, a.sni or host)
+    v = analyzer.analyze(chain, sni)
     print(v.report())
     return 0 if v.allow else 2
+
+
+def cmd_check(a):
+    """Mode 1: read a real server's certificate and judge it against the system trust store."""
+    import warnings
+    from .service import LabService
+    warnings.simplefilter("ignore")
+    logging.getLogger("certlab.decision").setLevel(logging.ERROR)
+    try:
+        r = LabService().live(a.target)
+    except (ValueError, OSError) as e:
+        print(f"could not check {a.target}: {e}")
+        return 1
+    l, v = r["live"], r["verdict"]
+    print(f"{l['host']}:{l['port']}  {l['ip']}  {l['tls']}  {l['cipher']}"
+          + ("  (via proxy)" if l["proxied"] else ""))
+    print(f"\nverdict: {r['hybrid']['level'].upper()}  trust={v['score']}/100  ({v['reason']})")
+    for c in v["checks"]:
+        print(f"  [{c['status'].upper():4}] {c['name']:<10} {c['detail']}")
+    print("\nchain:")
+    for i, c in enumerate(r["chain"]):
+        print(f"  {i}. {c['subject']}  <-  {c['issuer']}   ({c['not_before']} to {c['not_after']})")
+        print(f"     SHA-256 {c['sha256']}")
+    if r["ml"]:
+        print(f"\nML risk (reference only, trained on lab data): {r['ml']['risk']:.0%}")
+    return 0 if r["hybrid"]["allow"] else 2
 
 
 def cmd_train(a):
@@ -86,9 +117,12 @@ def main(argv=None):
     d.set_defaults(fn=cmd_demo)
     g = sub.add_parser("generate", help="write lab PKI + scenario certs (PEM) to DIR")
     g.add_argument("dir"), g.set_defaults(fn=cmd_generate)
-    z = sub.add_parser("analyze", help="analyze the cert served at HOST:PORT")
+    z = sub.add_parser("analyze", help="analyze a local lab server at 127.0.0.1:PORT")
     z.add_argument("target"), z.add_argument("--sni"), z.add_argument("--lab-dir")
     z.set_defaults(fn=cmd_analyze)
+    ck = sub.add_parser("check", help="live check of a real domain's certificate (read-only handshake)")
+    ck.add_argument("target", help="domain, e.g. example.com or example.com:8443")
+    ck.set_defaults(fn=cmd_check)
     t = sub.add_parser("train", help="generate a dataset, train and evaluate the ML risk model")
     t.set_defaults(fn=cmd_train)
     sv = sub.add_parser("serve", help="start the web UI (localhost only by default)")

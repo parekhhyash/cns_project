@@ -2,6 +2,9 @@ import datetime as dt
 import tempfile
 import unittest
 
+from cryptography import x509
+from cryptography.hazmat.primitives import serialization
+
 from certlab.analyzer import Analyzer, Policy
 from certlab.certgen import CTLog, Lab
 from certlab.netlab import (MitmProxy, TLSServer, guarded_client, make_analyzer,
@@ -25,6 +28,7 @@ class AnalyzerScenarios(unittest.TestCase):
                 chain = [sc.identity.cert, *sc.identity.chain]
                 v = an.analyze(chain, "bank.lab.test")
                 self.assertEqual("allow" if v.allow else "block", sc.expect, v.report())
+                self.assertEqual(sc.level, v.level, v.report())
                 for f in sc.expected_failures:
                     self.assertIn(f, v.failed, v.report())
 
@@ -75,6 +79,75 @@ class AnalyzerScenarios(unittest.TestCase):
         self.assertTrue(m("*.lab.test", "bank.lab.test"))
         self.assertFalse(m("*.lab.test", "a.bank.lab.test"))
         self.assertFalse(m("*.lab.test", "lab.test"))
+
+
+class SignatureAndLevels(unittest.TestCase):
+    def verdict(self, name, **kw):
+        sc = LAB.get(name)
+        return make_analyzer(LAB, **kw).analyze([sc.identity.cert, *sc.identity.chain], "bank.lab.test")
+
+    @staticmethod
+    def status(v, check):
+        return next(c.status for c in v.checks if c.name == check)
+
+    def test_tampered_cert_fails_signature_and_integrity_only_on_those(self):
+        v = self.verdict("tampered")
+        self.assertEqual("blocked", v.level)
+        self.assertEqual("fail", self.status(v, "signature"))
+        self.assertEqual("fail", self.status(v, "integrity"))
+        # the forged fields look perfect: that is exactly why a signature check is needed
+        self.assertEqual("pass", self.status(v, "hostname"))
+        self.assertEqual("pass", self.status(v, "validity"))
+
+    def test_valid_signature_is_not_the_same_as_trust(self):
+        for name in ("self_signed", "rogue_ca"):
+            with self.subTest(name):
+                v = self.verdict(name)
+                self.assertEqual("pass", self.status(v, "signature"))
+                self.assertEqual("fail", self.status(v, "chain"))
+                self.assertEqual("suspicious", v.level)
+                self.assertFalse(v.allow)
+
+    def test_integrity_passes_for_genuine_and_skips_without_a_record(self):
+        self.assertEqual("pass", self.status(self.verdict("legitimate"), "integrity"))
+        v = Analyzer(LAB.trust_store, crls=[LAB.crl], ct_log=None,
+                     policy=Policy(require_ct=False)).analyze(
+            [LAB.get("legitimate").identity.cert, *LAB.get("legitimate").identity.chain], "bank.lab.test")
+        self.assertEqual("skip", self.status(v, "integrity"))
+        self.assertTrue(v.allow)
+
+    def test_any_flipped_byte_breaks_signature(self):
+        sc = LAB.get("legitimate")
+        der = bytearray(sc.identity.cert.public_bytes(serialization.Encoding.DER))
+        der[len(der) // 3] ^= 0x01          # somewhere inside the signed body
+        try:
+            forged = x509.load_der_x509_certificate(bytes(der))
+        except ValueError:
+            self.skipTest("flip produced unparsable DER")
+        v = make_analyzer(LAB).analyze([forged, *sc.identity.chain], "bank.lab.test")
+        self.assertFalse(v.allow)
+
+    def test_ed25519_chain_is_verified_and_not_called_weak(self):
+        from cryptography.hazmat.primitives.asymmetric import ed25519
+        from certlab.certgen import make_ca
+        root_key = ed25519.Ed25519PrivateKey.generate()
+        import datetime as dt
+        now = dt.datetime.now(dt.timezone.utc)
+        name = lambda cn: x509.Name([x509.NameAttribute(x509.oid.NameOID.COMMON_NAME, cn)])
+        root = (x509.CertificateBuilder().subject_name(name("Ed Root")).issuer_name(name("Ed Root"))
+                .public_key(root_key.public_key()).serial_number(1)
+                .not_valid_before(now - dt.timedelta(days=1)).not_valid_after(now + dt.timedelta(days=30))
+                .add_extension(x509.BasicConstraints(ca=True, path_length=None), True).sign(root_key, None))
+        leaf_key = ed25519.Ed25519PrivateKey.generate()
+        leaf = (x509.CertificateBuilder().subject_name(name("ed.test")).issuer_name(root.subject)
+                .public_key(leaf_key.public_key()).serial_number(2)
+                .not_valid_before(now - dt.timedelta(days=1)).not_valid_after(now + dt.timedelta(days=30))
+                .add_extension(x509.SubjectAlternativeName([x509.DNSName("ed.test")]), False)
+                .sign(root_key, None))
+        v = Analyzer([root], policy=Policy(require_ct=False, revocation_hard_fail=False)).analyze([leaf], "ed.test")
+        self.assertEqual("pass", self.status(v, "signature"), v.report())
+        self.assertEqual("pass", self.status(v, "strength"), v.report())
+        self.assertTrue(v.allow, v.report())
 
 
 class CTLogTests(unittest.TestCase):

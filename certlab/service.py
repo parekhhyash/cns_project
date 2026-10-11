@@ -10,8 +10,9 @@ from cryptography import x509
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import ec, rsa
 
-from .analyzer import Analyzer, Policy, Verdict
-from .certgen import HOST, Lab, fingerprint
+from .analyzer import Analyzer, Policy, Verdict, pretty_fingerprint
+from . import live as livemod
+from .certgen import HOST, Lab
 from .ml.model import METRICS_PATH, MODEL_PATH, RiskModel
 from .netlab import run_scenario
 
@@ -45,7 +46,7 @@ def cert_info(c: x509.Certificate) -> dict:
         "not_before": c.not_valid_before_utc.strftime("%Y-%m-%d"),
         "not_after": c.not_valid_after_utc.strftime("%Y-%m-%d"),
         "sans": sans[:12], "san_total": len(sans), "is_ca": is_ca, "key": key,
-        "signature": h.name if h else "none", "sha256": fingerprint(c)[:24],
+        "signature": h.name if h else c.signature_algorithm_oid._name, "sha256": pretty_fingerprint(c),
     }
 
 
@@ -58,29 +59,31 @@ class LabService:
             with open(METRICS_PATH) as f:
                 self.metrics = json.load(f)
         self._lock = threading.Lock()   # scenarios open sockets; keep them one at a time
+        self._live_lock = threading.Lock()
 
     # ---- shared pieces ------------------------------------------------------
     def analyzer(self, policy: Policy | None = None) -> Analyzer:
         return Analyzer(self.lab.trust_store, crls=[self.lab.crl], ct_log=self.lab.ct, policy=policy)
 
     def _verdict(self, v: Verdict) -> dict:
-        return {"allow": v.allow, "score": v.score, "reason": v.reason,
+        return {"allow": v.allow, "level": v.level, "score": v.score, "reason": v.reason,
                 "checks": [{"name": c.name, "status": c.status, "detail": c.detail,
                             "weight": c.weight, "critical": c.critical} for c in v.checks]}
 
-    def _assess(self, chain, host, verdict: Verdict) -> dict:
+    def _assess(self, chain, host, verdict: Verdict, *, use_ml: bool = True) -> dict:
+        """Rules first; the ML score can only make a trusted verdict more cautious."""
         ml = self.risk.score(chain, host) if self.risk else None
-        rules_ok = verdict.allow
-        ml_ok = not (ml and ml["flag"])
-        if rules_ok and ml_ok:
-            h = {"allow": True, "reason": "Rules passed and ML risk is low"}
-        elif not rules_ok and ml_ok:
-            h = {"allow": False, "reason": "Blocked by the rule engine"}
-        elif rules_ok and not ml_ok:
-            h = {"allow": False, "reason": "Rules passed, but the ML model rates it high risk"}
+        flagged = bool(use_ml and ml and ml["flag"])
+        if verdict.level == "blocked":
+            level, why = "blocked", "Blocked by the rule engine" + (" and rated high risk by ML" if flagged else "")
+        elif verdict.level == "suspicious":
+            level, why = "suspicious", "Held back: not trusted by the rule engine" + (" and rated high risk by ML" if flagged else "")
+        elif flagged:
+            level, why = "suspicious", "Rules passed, but the ML model rates it high risk"
         else:
-            h = {"allow": False, "reason": "Blocked by the rules and rated high risk by ML"}
-        return {"verdict": self._verdict(verdict), "ml": ml, "hybrid": h,
+            level, why = "trusted", "Rules passed and ML risk is low" if use_ml else "All rule checks passed"
+        return {"verdict": self._verdict(verdict), "ml": ml, "ml_advisory": not use_ml,
+                "hybrid": {"level": level, "allow": level == "trusted", "reason": why},
                 "chain": [cert_info(c) for c in chain], "host": host}
 
     # ---- API ------------------------------------------------------------------
@@ -88,7 +91,8 @@ class LabService:
         return {
             "host": HOST,
             "scenarios": [{"name": s.name, "description": s.description, "expect": s.expect,
-                           "expected_failures": list(s.expected_failures)} for s in self.lab.scenarios],
+                           "level": s.level, "expected_failures": list(s.expected_failures)}
+                          for s in self.lab.scenarios],
             "ml_ready": self.risk is not None,
             "live": True,
         }
@@ -132,6 +136,21 @@ class LabService:
         v = self.analyzer(Policy(require_ct=require_ct,
                                  revocation_hard_fail=revocation_hard_fail)).analyze(chain, host)
         return self._assess(chain, host, v)
+
+    def live(self, target: str, *, _trust=None, _allow_private: bool = False) -> dict:
+        """Mode 1: read a real server's certificate chain and judge it. The underscore
+        arguments exist for tests (a local server and a lab trust store)."""
+        host, port = livemod.parse_target(target)
+        with self._live_lock:
+            got = livemod.fetch(host, port, allow_private=_allow_private)
+        trust = list(_trust if _trust is not None else livemod.system_trust())
+        policy = Policy(require_ct=False, revocation_hard_fail=False)  # no CRL/CT servers to ask
+        v = Analyzer(trust, policy=policy).analyze(got.chain, host)
+        out = self._assess(got.chain, host, v, use_ml=False)
+        out["live"] = {"host": host, "port": port, "ip": got.ip, "tls": got.tls_version,
+                       "cipher": got.cipher, "proxied": got.proxied, "trusted_roots": len(trust),
+                       "sent": len(got.chain)}
+        return out
 
     def export(self) -> dict:
         """Everything the static page needs; runs each scenario once, live."""
