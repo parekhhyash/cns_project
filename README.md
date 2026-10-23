@@ -143,3 +143,12 @@ credentials to the MITM in every attack; stdlib still accepts `revoked`,
   only to read the chain, sends no application data until approved, then closes on BLOCK.
   A production integration would hook the verify callback / proxy instead.
 - DANE/TLSA is out of scope (not enforced by mainstream browsers; needs DNSSEC).
+
+---
+
+## Team Members
+
+| Sr. No. | Name |  UID |
+|---|---|---|
+| 1 | Darsh Sharma | 2024300235 |
+
